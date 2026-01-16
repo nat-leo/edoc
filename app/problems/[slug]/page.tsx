@@ -71,6 +71,7 @@ type ProblemQuestion = {
   supportedLanguages?: SupportedLanguage[];
   starterCode?: Record<string, string>;
   examples?: Example[];
+  metaData?: string; // This is JSON, but it's in string format.
   [key: string]: unknown;
 };
 
@@ -104,7 +105,7 @@ export default function CodeEditorPage() {
       setProblemError(null);
 
       try {
-        const response = await fetch(`/api/problem/${slug}`, {
+        const response = await fetch(`/api/problems/${slug}`, {
           signal: controller.signal,
         });
         const payload = (await response.json().catch(() => ({} as Record<string, unknown>))) ?? {};
@@ -122,6 +123,11 @@ export default function CodeEditorPage() {
           (payload as any).data?.question ??
           (payload as any).data ??
           null;
+
+
+        console.log("question keys:", question ? Object.keys(question) : null);
+        console.log("question.metaData:", question?.metaData);
+        console.log("question.metadata:", question?.metadata);
 
         if (!question) {
           throw new Error("Problem data is missing");
@@ -205,6 +211,7 @@ export default function CodeEditorPage() {
           source_code: code,
           language_id: langId, // <-- make sure this is a Judge0 language_id number
           stdin: customTests ?? "",
+          metadata: problemData?.metadata ?? null
         }),
       });
 
@@ -244,7 +251,7 @@ export default function CodeEditorPage() {
 
   const statusPill = (() => {
     if (status === "running") return <Badge variant="secondary">Running…</Badge>;
-    if (status === "success") return <Badge>OK</Badge>;
+    if (status === "success") return <Badge>Success!</Badge>;
     if (status === "error") return <Badge variant="destructive">Error</Badge>;
     return <Badge variant="outline">Idle</Badge>;
   })();
