@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useParams } from "next/navigation";
 import Editor from "@monaco-editor/react";
-import { marked } from "marked";
 
 import DOMPurify from "dompurify";
 import ReactMarkdown from "react-markdown"
@@ -50,14 +49,6 @@ type SupportedLanguage = {
   judge0LanguageId: number;
 };
 
-type Example = {
-  id?: string;
-  name: string;
-  input: any;
-  output: any;
-  explanation?: string;
-};
-
 type ProblemQuestion = {
   title?: string;
   titleSlug?: string;
@@ -70,7 +61,7 @@ type ProblemQuestion = {
   judge?: { inputFormat?: "json"; outputFormat?: "json"; comparator?: string };
   supportedLanguages?: SupportedLanguage[];
   starterCode?: Record<string, string>;
-  examples?: Example[];
+  exampleTestcases?: string;
   metaData?: string; // This is JSON, but it's in string format.
   [key: string]: unknown;
 };
@@ -124,11 +115,6 @@ export default function CodeEditorPage() {
           (payload as any).data ??
           null;
 
-
-        console.log("question keys:", question ? Object.keys(question) : null);
-        console.log("question.metaData:", question?.metaData);
-        console.log("question.metadata:", question?.metadata);
-
         if (!question) {
           throw new Error("Problem data is missing");
         }
@@ -136,6 +122,7 @@ export default function CodeEditorPage() {
         if (!active) return;
         const resolved = question as ProblemQuestion;
         setProblemData(resolved);
+        setCustomTests(resolved.exampleTestcases ?? "");
         const defaultLang = (
           (resolved.supportedLanguages?.[0]?.slug ?? "typescript") as Language
         );
@@ -163,9 +150,7 @@ export default function CodeEditorPage() {
   const [language, setLanguage] = React.useState<Language>("typescript");
   const [code, setCode] = React.useState<string>("");
 
-  const [customTests, setCustomTests] = React.useState<string>(
-    "nums = [2,7,11,15]\ntarget = 9"
-  );
+  const [customTests, setCustomTests] = React.useState<string>("");
 
   const [status, setStatus] = React.useState<RunStatus>("idle");
   const [results, setResults] = React.useState<{ stdout?: string; stderr?: string }>({});
@@ -211,7 +196,8 @@ export default function CodeEditorPage() {
           source_code: code,
           language_id: langId, // <-- make sure this is a Judge0 language_id number
           stdin: customTests ?? "",
-          metadata: problemData?.metadata ?? null
+          metadata: problemData?.metadata ?? null,
+          test_cases: problemData?.exampleTestcases ?? null
         }),
       });
 
