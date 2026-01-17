@@ -94,7 +94,7 @@ export async function GET(
       judge0LanguageId: s.judge0LanguageId,
     })),
     starterCode,
-    // examples: (optional) you can wire later from exampleTestcases/content parsing
+    exampleTestcases: q.exampleTestcases
   };
 
   return NextResponse.json({ question: out });
