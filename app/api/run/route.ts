@@ -104,18 +104,13 @@ def main():
     fn = getattr(sol, FUNC_NAME)
 
     for i, args in enumerate(CASES):
-        try:
-            result = fn(*args)
-            print(json.dumps({"i": i, "args": args, "result": result}))
-        except Exception as e:
-            print(json.dumps({"i": i, "args": args, "error": str(e)}))
+        result = fn(*args)
+        print(json.dumps({"i": i, "args": args, "result": result}))
 
 if __name__ == "__main__":
     main()
 `;
 }
-
-
 
 const BASE = process.env.RAPIDAPI_BASE_URL!;
 const KEY = process.env.RAPIDAPI_KEY!;
