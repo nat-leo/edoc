@@ -90,6 +90,21 @@ function parseExampleTestcasesToCases(
   return out;
 }
 
+function serializeCasesToExampleTestcases(
+  cases: Testcase[],
+  paramNames: string[]
+): string {
+  if (!cases.length || !paramNames.length) return "";
+
+  return cases
+    .map((testcase) =>
+      paramNames
+        .map((name) => (testcase[name] ?? "").trim())
+        .join("\n")
+    )
+    .join("\n");
+}
+
 export default function CodeEditorPage() {
   const params = useParams();
   const slugParam = params?.slug;
@@ -178,6 +193,7 @@ export default function CodeEditorPage() {
 
   const [status, setStatus] = React.useState<RunStatus>("idle");
   const [results, setResults] = React.useState<{ stdout?: string; stderr?: string }>({});
+  const [activeTab, setActiveTab] = React.useState<"testcases" | "results">("testcases");
 
   const problemTitle =
     problemData?.title ?? (problemLoading ? "Loading problem..." : "Problem");
@@ -207,6 +223,10 @@ export default function CodeEditorPage() {
   const paramNames = (problemData as any)?.signature?.params?.map((p: any) => p.name) ?? ["input"];
   const [caseIndex, setCaseIndex] = React.useState(0);
   const [cases, setCases] = React.useState<Testcase[]>([]);
+  const serializedCustomTests = React.useMemo(
+    () => serializeCasesToExampleTestcases(cases, paramNames),
+    [cases, paramNames]
+  );
 
   React.useEffect(() => {
     if (!problemData) return;
@@ -241,7 +261,7 @@ export default function CodeEditorPage() {
           language_id: langId, // <-- make sure this is a Judge0 language_id number
           stdin: customTests ?? "",
           metadata: problemData?.metadata ?? null,
-          test_cases: problemData?.exampleTestcases ?? null
+          test_cases: serializedCustomTests || null,
         }),
       });
 
@@ -272,6 +292,8 @@ export default function CodeEditorPage() {
     } catch (e) {
       setResults({ stdout: "", stderr: e instanceof Error ? e.message : "Run failed" });
       setStatus("error");
+    } finally {
+      setActiveTab("results");
     }
   }
 
@@ -407,7 +429,11 @@ export default function CodeEditorPage() {
             {/* BOTTOM: Testcases + Results */}
             <ResizablePanel defaultSize={32} minSize={18}>
                 <div className="flex h-full flex-col">
-                  <Tabs defaultValue="testcases" className="flex h-full flex-col">
+                  <Tabs
+                    value={activeTab}
+                    onValueChange={(v) => setActiveTab(v as "testcases" | "results")}
+                    className="flex h-full flex-col"
+                  >
                     <div className="flex items-center justify-between border-t px-3 py-2">
                       <TabsList>
                         <TabsTrigger value="testcases">Testcases</TabsTrigger>
