@@ -192,7 +192,7 @@ export default function CodeEditorPage() {
   const [customTests, setCustomTests] = React.useState<string>("");
 
   const [status, setStatus] = React.useState<RunStatus>("idle");
-  const [results, setResults] = React.useState<{ stdout?: string; stderr?: string }>({});
+  const [results, setResults] = React.useState<{ stdout?: string; stderr?: string, time?: string, memory?: string }>({});
   const [activeTab, setActiveTab] = React.useState<"testcases" | "results">("testcases");
 
   const problemTitle =
@@ -287,10 +287,12 @@ export default function CodeEditorPage() {
       setResults({
         stdout: String(poll?.stdout ?? ""),
         stderr: String(poll?.stderr ?? poll?.compile_output ?? poll?.message ?? ""),
+        time: String(poll?.time ?? poll?.compile_output ?? poll?.message ?? ""),
+        memory: String(poll?.memory ?? poll?.compile_output ?? poll?.message ?? ""),
       });
       setStatus("success");
     } catch (e) {
-      setResults({ stdout: "", stderr: e instanceof Error ? e.message : "Run failed" });
+      setResults({ stdout: "", stderr: e instanceof Error ? e.message : "Run failed", time: "", memory: "" });
       setStatus("error");
     } finally {
       setActiveTab("results");
@@ -518,11 +520,6 @@ export default function CodeEditorPage() {
                               })}
                             </div>
                           </ScrollArea>
-
-                          {/* Optional helper */}
-                          <div className="text-xs text-muted-foreground">
-                            Enter values per parameter. Arrays like <span className="font-mono">[1,2,3]</span>.
-                          </div>
                         </div>
                     </TabsContent>
 
@@ -545,6 +542,18 @@ export default function CodeEditorPage() {
                             {results.stderr ? (
                               <pre className="whitespace-pre-wrap font-mono text-sm text-destructive">
                                 {results.stderr}
+                              </pre>
+                            ) : null}
+
+                            {results.time ? (
+                              <pre className="whitespace-pre-wrap font-mono text-sm text-destructive">
+                                {results.time}
+                              </pre>
+                            ) : null}
+
+                            {results.memory ? (
+                              <pre className="whitespace-pre-wrap font-mono text-sm text-destructive">
+                                {results.memory}
                               </pre>
                             ) : null}
 

@@ -2,7 +2,7 @@
 
 export const JUDGE0_LANGUAGE_ID: Record<Language, number> = {
   typescript: 45, // TypeScript (Node.js) on many Judge0 instances
-  python: 28,     // Python (3.x)
+  python: 32,     // Python (3.13)
   java: 4,       // Java
 };
 

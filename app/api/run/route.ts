@@ -85,7 +85,8 @@ export function makePythonHarnessFromExamples(opts: {
 
   const cases = parseExampleTestcases(exampleTestcases, arity);
 
-  return `# ---- USER CODE (verbatim) ----
+  return `from typing import List
+# ---- USER CODE (verbatim) ----
 ${source_code}
 
 # ---- HARNESS (examples) ----
@@ -127,7 +128,7 @@ export async function POST(req: Request) {
   const url = new URL(`${BASE}/submissions`);
   url.searchParams.set("base64_encoded", "false");
   url.searchParams.set("wait", "false");
-  url.searchParams.set("fields", "*");
+  url.searchParams.set("fields", "stdout,stderr,status,time,memory");
 
   const r = await fetch(url.toString(), {
     method: "POST",
@@ -149,7 +150,7 @@ export async function GET(req: Request) {
 
   const url = new URL(`${BASE}/submissions/${token}`);
   url.searchParams.set("base64_encoded", "false");
-  url.searchParams.set("fields", "*");
+  url.searchParams.set("fields", "stdout,stderr,status,time,memory");
 
   const r = await fetch(url.toString(), {
     method: "GET",
