@@ -13,12 +13,13 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -65,6 +66,30 @@ type ProblemQuestion = {
   metaData?: string; // This is JSON, but it's in string format.
   [key: string]: unknown;
 };
+
+type Testcase = Record<string, string>;
+
+function parseExampleTestcasesToCases(
+  exampleTestcases: string,
+  paramNames: string[]
+): Testcase[] {
+  const arity = paramNames.length || 1;
+  const lines = exampleTestcases
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const out: Testcase[] = [];
+  for (let i = 0; i < lines.length; i += arity) {
+    const chunk = lines.slice(i, i + arity);
+    if (chunk.length < arity) break;
+
+    const obj: Testcase = {};
+    for (let j = 0; j < arity; j++) obj[paramNames[j]] = chunk[j];
+    out.push(obj);
+  }
+  return out;
+}
 
 export default function CodeEditorPage() {
   const params = useParams();
@@ -179,6 +204,26 @@ export default function CodeEditorPage() {
       );
     }
   }, [language, problemData]);
+
+  const paramNames = (problemData as any)?.signature?.params?.map((p: any) => p.name) ?? ["input"];
+  const [caseIndex, setCaseIndex] = React.useState(0);
+  const [cases, setCases] = React.useState<Testcase[]>([]);
+
+  React.useEffect(() => {
+    if (!problemData) return;
+
+    const names = paramNames.length ? paramNames : ["input"];
+
+    const seeded =
+      problemData.exampleTestcases && paramNames.length
+        ? parseExampleTestcasesToCases(problemData.exampleTestcases, paramNames)
+        : [Object.fromEntries(names.map((n) => [n, ""])) as Testcase];
+
+    setCases(seeded.length ? seeded : [Object.fromEntries(names.map((n) => [n, ""])) as Testcase]);
+    setCaseIndex(0);
+    // only rerun when switching problems
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [problemData?.titleSlug]);
 
   async function onRun() {
     setStatus("running");
@@ -360,37 +405,102 @@ export default function CodeEditorPage() {
               </div>
             </ResizablePanel>
 
-            <ResizableHandle />
-
             {/* BOTTOM: Testcases + Results */}
             <ResizablePanel defaultSize={32} minSize={18}>
-              <div className="flex h-full flex-col">
-                <Tabs defaultValue="testcases" className="flex h-full flex-col">
-                  <div className="flex items-center justify-between border-b px-3 py-2">
-                    <TabsList>
-                      <TabsTrigger value="testcases">Testcases</TabsTrigger>
-                      <TabsTrigger value="results">Results</TabsTrigger>
-                    </TabsList>
-                    <div className="text-xs text-muted-foreground">
-                      Drag the handles to resize
-                    </div>
-                  </div>
-
-                  <TabsContent value="testcases" className="min-h-0 flex-1 p-3">
-                    <div className="flex h-full flex-col gap-2">
-                      <div className="text-sm font-medium">Custom Input</div>
-                      <Textarea
-                        value={customTests}
-                        onChange={(e) => setCustomTests(e.target.value)}
-                        className="flex-1 font-mono text-sm"
-                        placeholder="Enter custom test input here..."
-                      />
+                <div className="flex h-full flex-col">
+                  <Tabs defaultValue="testcases" className="flex h-full flex-col">
+                    <div className="flex items-center justify-between border-t px-3 py-2">
+                      <TabsList>
+                        <TabsTrigger value="testcases">Testcases</TabsTrigger>
+                        <TabsTrigger value="results">Results</TabsTrigger>
+                      </TabsList>
                       <div className="text-xs text-muted-foreground">
-                        {/* UNSOLDERED WIRE: parse/validate per language + problem input schema */}
-                        Input format is currently free-form.
+                        Drag the handles to resize
                       </div>
                     </div>
-                  </TabsContent>
+                  
+                    {/* That Leetcode-style testcases bottom spot that lets you add test cases. */}
+                    <TabsContent value="testcases" className="min-h-0 flex-1 p-3">
+                        <div className="flex h-full flex-col gap-3">
+                          {/* Case tabs */}
+                          <ScrollArea className="w-full h-10">
+                            <div className="flex w-max items-center gap-2 pr-2">
+                              {cases.map((_, i) => (
+                                <Button
+                                  key={i}
+                                  type="button"
+                                  variant={i === caseIndex ? "secondary" : "ghost"}
+                                  size="sm"
+                                  onClick={() => setCaseIndex(i)}
+                                  className="rounded-full"
+                                >
+                                  Case {i + 1}
+                                </Button>
+                              ))}
+
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setCases((prev) => [
+                                    ...prev,
+                                    Object.fromEntries(paramNames.map((n: string) => [n, ""])),
+                                  ]);
+                                  setCaseIndex(cases.length);
+                                }}
+                                className="rounded-full"
+                              >
+                                +
+                              </Button>
+                            </div>
+                            <ScrollBar orientation="horizontal" />
+                          </ScrollArea>
+
+                          {/* Scrollable parameter inputs */}
+                          <ScrollArea className="min-h-0 flex-1">
+                            <div className="space-y-4 pr-2">
+                              {paramNames.map((name: string) => {
+                                const value = cases[caseIndex]?.[name] ?? "";
+                                const isMultiLine =
+                                  value.includes("\n") ||
+                                  value.trim().startsWith("[") ||
+                                  value.trim().startsWith("{");
+
+                                return (
+                                  <div key={name} className="space-y-2">
+                                    <div className="text-sm text-muted-foreground font-semibold">
+                                      {name} =
+                                    </div>
+
+                                    <div className="rounded-xl bg-muted/50 p-3">
+                                      <Input
+                                        value={value}
+                                        onChange={(e) => {
+                                          const next = e.target.value;
+                                          setCases((prev) => {
+                                            const copy = [...prev];
+                                            copy[caseIndex] = { ...copy[caseIndex], [name]: next };
+                                            return copy;
+                                          });
+                                        }}
+                                        className="border-0 bg-transparent p-0 font-mono text-sm focus-visible:ring-0 focus-visible:ring-offset-0 h-8"
+                                        placeholder={name === "nums" ? "[2,7,11,15]" : "9"}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </ScrollArea>
+
+                          {/* Optional helper */}
+                          <div className="text-xs text-muted-foreground">
+                            Enter values per parameter. Arrays like <span className="font-mono">[1,2,3]</span>.
+                          </div>
+                        </div>
+                    </TabsContent>
+
 
                   <TabsContent value="results" className="min-h-0 flex-1 p-3">
                     <div className="flex h-full flex-col gap-2">
