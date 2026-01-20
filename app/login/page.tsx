@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,13 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+import {
+  signInWithGoogle,
+  signInWithEmailPassword,
+  signUpWithEmailPassword,
+} from "@/lib/auth";
+
 
 // Optional icons (if you have lucide-react)
 // import { Eye, EyeOff, Github, Chrome } from "lucide-react";
@@ -43,7 +51,39 @@ type AuthPageProps = {
   onOAuth?: (provider: "google" | "github") => Promise<void>;
 };
 
-export default function AuthPage({
+export default function LoginClient() {
+  const router = useRouter();
+  const sp = useSearchParams();
+  const redirectTo = sp.get("redirectTo") ?? "/";
+
+  return (
+    <AuthPage
+      redirectTo={redirectTo}
+      onOAuth={async (provider) => {
+        if (provider === "google") {
+          await signInWithGoogle();
+          router.push(redirectTo);
+          router.refresh();
+          return;
+        }
+        throw new Error("GitHub not wired yet.");
+      }}
+      onSignIn={async ({ email, password, remember }) => {
+        await signInWithEmailPassword({ email, password, remember });
+        router.push(redirectTo);
+        router.refresh();
+      }}
+      onSignUp={async ({ email, password }) => {
+        await signUpWithEmailPassword({ email, password });
+        // You can auto-redirect or force them to sign in after verifying email
+        router.push(redirectTo);
+        router.refresh();
+      }}
+    />
+  );
+}
+
+export function AuthPage({
   className,
   redirectTo = "/",
   onSignIn,
