@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
-import { JUDGE0_LANGUAGE_ID, Language, ProblemSignature as StarterProblemSignature, renderStarterCode } from "@/lib/starter_code";
+import { JUDGE0_LANGUAGE_ID, Language, ProblemSignature as StarterProblemSignature, renderStarterCode } from "@/lib/starter-code";
 
 type RunStatus = "idle" | "running" | "success" | "error";
 
@@ -162,6 +162,23 @@ export default function CodeEditorPage() {
         const resolved = question as ProblemQuestion;
         setProblemData(resolved);
         setCustomTests(resolved.exampleTestcases ?? "");
+
+        console.log("THINGS___________-------", resolved);
+        // fire-and-forget upsert (do NOT block UI)
+        fetch("/api/ingest/problem", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: resolved.title,
+            titleSlug: resolved.titleSlug,
+            content: resolved.content,
+            difficulty: resolved.difficulty,
+            starterCode: resolved.starterCode,
+            metaData: resolved.metadata,
+            exampleTestcases: resolved.exampleTestcases,
+        })
+        }).catch((e) => console.error("ingest failed", e));
+
         const defaultLang = (
           (resolved.supportedLanguages?.[0]?.slug ?? "typescript") as Language
         );
@@ -311,7 +328,6 @@ export default function CodeEditorPage() {
   })();
 
   const isHtml = (s: string) => /<\/?[a-z][\s\S]*>/i.test(s)
-
 
   return (
     <div className="h-[calc(100vh-2rem)] w-full p-4">
@@ -546,13 +562,13 @@ export default function CodeEditorPage() {
                             ) : null}
 
                             {results.time ? (
-                              <pre className="whitespace-pre-wrap font-mono text-sm text-destructive">
+                              <pre className="whitespace-pre-wrap font-mono text-sm text-foreground">
                                 {results.time}
                               </pre>
                             ) : null}
 
                             {results.memory ? (
-                              <pre className="whitespace-pre-wrap font-mono text-sm text-destructive">
+                              <pre className="whitespace-pre-wrap font-mono text-sm text-foreground">
                                 {results.memory}
                               </pre>
                             ) : null}

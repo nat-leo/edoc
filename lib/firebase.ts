@@ -14,3 +14,4 @@ export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
 export const ui = initializeUI({ app });
+
