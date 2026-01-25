@@ -105,6 +105,81 @@ function serializeCasesToExampleTestcases(
     .join("\n");
 }
 
+type AnyObj = Record<string, unknown>;
+
+function extractQuestion(payload: any): any | null {
+  return (
+    payload?.question ??
+    payload?.problem ??
+    payload?.data?.question ??
+    payload?.data?.problem ??
+    payload?.data ??
+    null
+  );
+}
+
+function errorFrom(res: Response, payload: any) {
+  const msg =
+    typeof payload === "object" && payload !== null && "error" in payload
+      ? String((payload as any).error)
+      : `Failed to load problem (HTTP ${res.status})`;
+  const err = new Error(msg);
+  (err as any).status = res.status;
+  return err;
+}
+
+async function readJson(res: Response): Promise<any> {
+  return (await res.json().catch(() => ({} as AnyObj))) ?? {};
+}
+
+export async function fetchProblemWithFallback(
+  slug: string,
+  signal: AbortSignal
+): Promise<{ resolved: ProblemQuestion; source: "db" | "leetcode" }> {
+  // 1) DB first
+  let res = await fetch(`/api/ingest/problem/${slug}`, { signal });
+  let payload = await readJson(res);
+
+  if (res.status === 404) {
+    // 2) fallback to LeetCode
+    res = await fetch(`/api/leetcode/problems/${slug}`, { signal });
+    payload = await readJson(res);
+
+    if (!res.ok) throw errorFrom(res, payload);
+
+    const q = extractQuestion(payload);
+    if (!q) throw new Error("Problem data is missing");
+
+    const resolved = q as ProblemQuestion;
+
+    // ingest ONLY when we had to hit LeetCode (fire-and-forget)
+    fetch("/api/ingest/problem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: resolved.title,
+        titleSlug: resolved.titleSlug,
+        content: resolved.content,
+        difficulty: resolved.difficulty,
+        starterCode: resolved.starterCode,
+        metaData: resolved.metaData, // standardized ✅
+        exampleTestcases: resolved.exampleTestcases,
+      }),
+    }).catch((e) => console.error("ingest failed", e));
+
+    return { resolved, source: "leetcode" };
+  }
+
+  // DB returned something other than 404
+  if (!res.ok) throw errorFrom(res, payload);
+
+  const q = extractQuestion(payload);
+  if (!q) throw new Error("Problem data is missing");
+
+  return { resolved: q as ProblemQuestion, source: "db" };
+}
+
+
 export default function CodeEditorPage() {
   const params = useParams();
   const slugParam = params?.slug;
@@ -135,65 +210,31 @@ export default function CodeEditorPage() {
       setProblemError(null);
 
       try {
-        const response = await fetch(`/api/problems/${slug}`, {
-          signal: controller.signal,
-        });
-        const payload = (await response.json().catch(() => ({} as Record<string, unknown>))) ?? {};
-
-        if (!response.ok) {
-          throw new Error(
-            typeof payload === "object" && payload !== null && "error" in payload
-              ? String((payload as any).error)
-              : "Failed to load problem"
-          );
-        }
-
-        const question =
-          (payload as any).question ??
-          (payload as any).data?.question ??
-          (payload as any).data ??
-          null;
-
-        if (!question) {
-          throw new Error("Problem data is missing");
-        }
+        const { resolved, source } = await fetchProblemWithFallback(
+          slug,
+          controller.signal
+        );
 
         if (!active) return;
-        const resolved = question as ProblemQuestion;
+
         setProblemData(resolved);
         setCustomTests(resolved.exampleTestcases ?? "");
 
-        console.log("THINGS___________-------", resolved);
-        // fire-and-forget upsert (do NOT block UI)
-        fetch("/api/ingest/problem", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: resolved.title,
-            titleSlug: resolved.titleSlug,
-            content: resolved.content,
-            difficulty: resolved.difficulty,
-            starterCode: resolved.starterCode,
-            metaData: resolved.metadata,
-            exampleTestcases: resolved.exampleTestcases,
-        })
-        }).catch((e) => console.error("ingest failed", e));
-
-        const defaultLang = (
-          (resolved.supportedLanguages?.[0]?.slug ?? "typescript") as Language
-        );
+        const defaultLang = ((resolved.supportedLanguages?.[0]?.slug ??
+          "typescript") as Language);
         setLanguage(defaultLang);
+
+        console.log("Loaded problem from:", source, resolved);
       } catch (error) {
         if (!active) return;
         setProblemData(null);
-        setProblemError(
-          error instanceof Error ? error.message : "Unable to load problem"
-        );
+        setProblemError(error instanceof Error ? error.message : "Unable to load problem");
       } finally {
         if (!active) return;
         setProblemLoading(false);
       }
     };
+
 
     fetchProblem();
 
@@ -277,7 +318,7 @@ export default function CodeEditorPage() {
           source_code: code,
           language_id: langId, // <-- make sure this is a Judge0 language_id number
           stdin: customTests ?? "",
-          metadata: problemData?.metadata ?? null,
+          metaData: problemData?.metaData ?? null,
           test_cases: serializedCustomTests || null,
         }),
       });
@@ -397,13 +438,9 @@ export default function CodeEditorPage() {
                         <SelectValue placeholder="Language" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(problemData?.supportedLanguages ?? []).map((l) => (
-                          <SelectItem key={l.slug} value={l.slug}>
-                            {l.slug === "typescript"
-                              ? "TypeScript"
-                              : l.slug === "python"
-                                ? "Python"
-                                : "Java"}
+                        {Object.keys(problemData?.starterCode ?? {}).map((slug) => (
+                          <SelectItem key={slug} value={slug}>
+                            {slug? slug: "No Language Available"}
                           </SelectItem>
                         ))}
                       </SelectContent>

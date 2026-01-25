@@ -4,7 +4,7 @@ import { adminDb } from "@/lib/firebase-admin";
 type ProblemEntry = {
   title: string;
   titleSlug: string;
-  content: string;          // HTML string
+  content: string;          // HTML OR Markdown formatted as a String
   difficulty: "Easy" | "Medium" | "Hard" | string;
   starterCode?: Record<string, string>;
   metaData: string;         // ⚠️ usually JSON string

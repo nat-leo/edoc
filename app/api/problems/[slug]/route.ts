@@ -87,7 +87,7 @@ export async function GET(
     titleSlug: q.titleSlug,
     difficulty: q.difficulty,
     content: q.content, // HTML; your UI already supports HTML rendering
-    metadata: q.metaData,
+    metaData: q.metaData,
     signature,
     supportedLanguages: SUPPORTED.map((s) => ({
       slug: s.slug,
