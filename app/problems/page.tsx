@@ -42,7 +42,7 @@ export default function ProblemFeedPage() {
     setError(null)
 
     try {
-      const res = await fetch(`/api/problem?limit=${LIMIT}&skip=${skip}`, { cache: "no-store" })
+      const res = await fetch(`/api/leetcode/problems?limit=${LIMIT}&skip=${skip}`, { cache: "no-store" })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
       const json = (await res.json()) as ApiResponse
