@@ -32,67 +32,30 @@ function parseExampleTestcases(exampleTestcases: string, arity: number): any[][]
   return cases;
 }
 
-export function makePythonHarness(opts: {
-  source_code: string;
-  metadata: string; // LeetCode metaData JSON string
-}) {
-  const { source_code, metadata } = opts;
-
-  return `# ---- USER CODE (verbatim) ----
-${source_code}
-
-# ---- HARNESS ----
-import json
-
-METADATA = ${JSON.stringify(metadata)}
-md = json.loads(METADATA)
-
-FUNC_NAME = md["name"]
-PARAMS = [p["name"] for p in md.get("params", [])]
-
-# hardcoded inputs for now
-nums = [1, 2, 3, 4, 5, 6]
-target = 9
-
-def main():
-    sol = Solution()
-
-    args_by_name = {
-        "nums": nums,
-        "target": target,
-    }
-    args = [args_by_name[name] for name in PARAMS]
-
-    result = getattr(sol, FUNC_NAME)(*args)
-    print(json.dumps({"func": FUNC_NAME, "params": PARAMS, "args": args, "result": result}))
-
-if __name__ == "__main__":
-    main()
-`;
-}
-
 export function makePythonHarnessFromExamples(opts: {
   source_code: string;
-  metadata: string;          // metaData JSON string
+  metaData: string;          // metaData JSON string
   exampleTestcases: string;  // exampleTestcases string
 }) {
-  const { source_code, metadata, exampleTestcases } = opts;
+  const { source_code, metaData, exampleTestcases } = opts;
 
   // parse metadata to get arity + param names
-  const md = JSON.parse(metadata);
+  const md = JSON.parse(metaData);
   const paramNames: string[] = (md.params ?? []).map((p: any) => p.name);
   const arity = paramNames.length;
 
   const cases = parseExampleTestcases(exampleTestcases, arity);
 
-  return `from typing import List
+  return `
 # ---- USER CODE (verbatim) ----
+from typing import List
+import json
+
 ${source_code}
 
 # ---- HARNESS (examples) ----
-import json
 
-METADATA = ${JSON.stringify(metadata)}
+METADATA = ${JSON.stringify(metaData)}
 md = json.loads(METADATA)
 
 FUNC_NAME = md["name"]
@@ -120,10 +83,10 @@ const HOST = process.env.RAPIDAPI_HOST!;
 export async function POST(req: Request) {
   const body = await req.json();
   console.log(body);
-  const { source_code, language_id, stdin, metadata, test_cases } = body;
+  const { source_code, language_id, stdin, metaData, test_cases } = body;
 
   const final_source_code =
-    metadata ? makePythonHarnessFromExamples({ source_code, metadata, exampleTestcases: test_cases }) : source_code;
+    metaData ? makePythonHarnessFromExamples({ source_code, metaData, exampleTestcases: test_cases }) : source_code;
 
   const url = new URL(`${BASE}/submissions`);
   url.searchParams.set("base64_encoded", "false");

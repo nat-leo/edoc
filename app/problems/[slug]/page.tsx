@@ -358,7 +358,56 @@ export default function CodeEditorPage() {
   }
 
   async function onSubmit() {
-    console.log("TODO");
+    setStatus("running");
+    setResults({ stdout: "Running...", stderr: "" });
+
+    const langId = JUDGE0_LANGUAGE_ID[language as Language];
+    if (!langId) throw new Error(`Unsupported language: ${language}`);
+
+    try {
+      // 1) submit -> token
+      const submitRes = await fetch("/api/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug,                 // titleSlug
+          source_code: code,    // editor code
+          language_id: 32,      // python in your setup
+        }),
+      });
+
+      const submit = await submitRes.json().catch(() => ({} as any));
+      if (!submitRes.ok) throw new Error(submit?.error ?? "Run submit failed");
+
+      const token = submit?.token as string | undefined;
+      if (!token) throw new Error("No token returned from /api/run");
+
+      // 2) poll until finished
+      let poll: any = null;
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+
+        const pollRes = await fetch(`/api/submit?token=${encodeURIComponent(token)}`);
+        poll = await pollRes.json().catch(() => ({} as any));
+        if (!pollRes.ok) throw new Error(poll?.error ?? "Run poll failed");
+
+        const statusId = poll?.status?.id;
+        if (statusId && statusId !== 1 && statusId !== 2) break; // 1=In Queue, 2=Processing
+      }
+
+      setResults({
+        stdout: String(poll?.stdout ?? ""),
+        stderr: String(poll?.stderr ?? poll?.compile_output ?? poll?.message ?? ""),
+        time: String(poll?.time ?? poll?.compile_output ?? poll?.message ?? ""),
+        memory: String(poll?.memory ?? poll?.compile_output ?? poll?.message ?? ""),
+      });
+      setStatus("success");
+    } catch (e) {
+      setResults({ stdout: "", stderr: e instanceof Error ? e.message : "Run failed", time: "", memory: "" });
+      setStatus("error");
+    } finally {
+      setActiveTab("results");
+    }
   }
 
   const statusPill = (() => {
