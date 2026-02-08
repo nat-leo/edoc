@@ -1,101 +1,307 @@
 import { NextResponse } from "next/server";
+import { adminDb } from "@/lib/firebase-admin";
 
-const LEETCODE_GRAPHQL = "https://leetcode.com/graphql";
-
-const SUPPORTED = [
-  { slug: "typescript", lc: "typescript", judge0LanguageId: 74 },
-  { slug: "python", lc: "python3", judge0LanguageId: 71 },
-  { slug: "java", lc: "java", judge0LanguageId: 62 },
+const COLLECTION = "generated_problems";
+const UPDATABLE_FIELDS = [
+  "title",
+  "content",
+  "difficulty",
+  "starterCode",
+  "metaData",
+  "exampleTestcases",
 ] as const;
 
-type CanonType = "int" | "int[]" | "int[][]" | "string" | "string[]" | "boolean" | "void";
+type UpdatableField = (typeof UPDATABLE_FIELDS)[number];
 
-function canonTypeFromLeetCode(t: string): CanonType {
-  // minimal mapping; extend when you hit more types
-  const s = t.trim().toLowerCase();
-  if (s === "integer") return "int";
-  if (s === "integer[]") return "int[]";
-  if (s === "integer[][]") return "int[][]";
-  if (s === "string") return "string";
-  if (s === "string[]") return "string[]";
-  if (s === "boolean") return "boolean";
-  return "void"; // fallback
+type ProblemEntry = {
+  title: string;
+  titleSlug: string;
+  content: string;
+  difficulty: string;
+  starterCode: Record<string, string>;
+  metaData: string;
+  exampleTestcases: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+function normalizeSlug(value?: string | null) {
+  const slug = value?.trim();
+  return slug && slug.length > 0 ? slug : null;
+}
+
+async function parseBody(req: Request): Promise<Partial<ProblemEntry> | null> {
+  try {
+    const body = await req.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return null;
+    }
+    return body as Partial<ProblemEntry>;
+  } catch {
+    return null;
+  }
+}
+
+function buildProblemEntry(data: Partial<ProblemEntry> | undefined, slug: string): ProblemEntry {
+  const payload = data ?? {};
+  return {
+    title: payload.title ?? "",
+    titleSlug: payload.titleSlug ?? slug,
+    content: payload.content ?? "",
+    difficulty: payload.difficulty ?? "Unknown",
+    starterCode: payload.starterCode ?? {},
+    metaData: payload.metaData ?? "",
+    exampleTestcases: payload.exampleTestcases ?? "",
+    createdAt: payload.createdAt,
+    updatedAt: payload.updatedAt,
+  };
+}
+
+function buildPayload(
+  body: Partial<ProblemEntry>,
+  slug: string,
+  opts: { includeCreatedAt: boolean; withDefaults: boolean }
+) {
+  const now = new Date().toISOString();
+  const payload: Record<string, unknown> = {
+    titleSlug: slug,
+    updatedAt: now,
+  };
+  if (opts.includeCreatedAt) {
+    payload.createdAt = now;
+  }
+
+  const setField = (field: keyof ProblemEntry, defaultValue?: unknown) => {
+    const value = body[field];
+    if (value !== undefined) {
+      payload[field] = value;
+    } else if (opts.withDefaults && defaultValue !== undefined) {
+      payload[field] = defaultValue;
+    }
+  };
+
+  setField("title", slug);
+  setField("content", "");
+  setField("difficulty", "Unknown");
+  setField("starterCode", {});
+  setField("metaData", "");
+  setField("exampleTestcases", "");
+
+  return payload;
+}
+
+function hasUpdatableField(body: Partial<ProblemEntry>) {
+  return UPDATABLE_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(body, field));
 }
 
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  const { slug } = await params;
-
-  const res = await fetch(LEETCODE_GRAPHQL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Referer: "https://leetcode.com",
-    },
-    body: JSON.stringify({
-      query: `
-        query questionData($titleSlug: String!) {
-          question(titleSlug: $titleSlug) {
-            title
-            titleSlug
-            content
-            difficulty
-            codeSnippets { langSlug code }
-            metaData
-            exampleTestcases
-          }
-        }
-      `,
-      variables: { titleSlug: slug },
-    }),
-    cache: "no-store",
-  });
-
-  const json = await res.json();
-  const q = json?.data?.question;
-  if (!q) {
-    return NextResponse.json({ error: "LeetCode question not found", raw: json }, { status: 404 });
-  }
-
-  // signature from metaData (JSON string)
-  let signature = undefined as any;
   try {
-    const md = JSON.parse(q.metaData);
-    signature = {
-      functionName: md.name,
-      params: (md.params ?? []).map((p: any) => ({
-        name: p.name,
-        type: canonTypeFromLeetCode(p.type),
-      })),
-      returnType: canonTypeFromLeetCode(md.return?.type ?? "void"),
+    const { slug } = await params;
+    const slugValue = normalizeSlug(slug);
+    if (!slugValue) {
+      return NextResponse.json({ error: "Missing slug" }, { status: 400 });
+    }
+
+    const ref = adminDb.collection(COLLECTION).doc(slugValue);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return NextResponse.json({ error: "Problem not found" }, { status: 404 });
+    }
+
+    const out = buildProblemEntry(snap.data(), slugValue);
+    return NextResponse.json({ problem: out });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message ?? "Unknown error" }, { status: 500 });
+  }
+}
+
+function validateTitleAndContent(body: Partial<ProblemEntry>) {
+  const titleValue = typeof body.title === "string" ? body.title.trim() : "";
+  if (!titleValue) {
+    return { error: "Missing or empty title" };
+  }
+
+  const contentValue = typeof body.content === "string" ? body.content : "";
+  if (!contentValue.trim()) {
+    return { error: "Missing or empty content" };
+  }
+
+  return { title: titleValue, content: contentValue };
+}
+
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  try {
+    const { slug } = await params;
+    const slugValue = normalizeSlug(slug);
+    if (!slugValue) {
+      return NextResponse.json({ error: "Missing slug" }, { status: 400 });
+    }
+
+    const body = await parseBody(req);
+    if (!body) {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    const titleCheck = validateTitleAndContent(body);
+    if ("error" in titleCheck) {
+      return NextResponse.json({ error: titleCheck.error }, { status: 400 });
+    }
+
+    const ref = adminDb.collection(COLLECTION).doc(slugValue);
+    const existing = await ref.get();
+    if (existing.exists) {
+      return NextResponse.json({ error: "Problem already exists" }, { status: 409 });
+    }
+
+    const sanitized: Partial<ProblemEntry> = {
+      ...body,
+      title: titleCheck.title,
+      content: titleCheck.content,
     };
-  } catch {
-    signature = undefined;
+
+    const payload = buildPayload(sanitized, slugValue, { includeCreatedAt: true, withDefaults: true });
+    await ref.set(payload, { merge: true });
+
+    return NextResponse.json({ ok: true }, { status: 201 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message ?? "Unknown error" }, { status: 500 });
   }
+}
 
-  // starter code from codeSnippets
-  const starterCode: Record<string, string> = {};
-  for (const s of SUPPORTED) {
-    const snippet = (q.codeSnippets ?? []).find((x: any) => x.langSlug === s.lc);
-    if (snippet?.code) starterCode[s.slug] = snippet.code;
+export async function PUT(
+  req: Request,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  try {
+    const { slug } = await params;
+    const slugValue = normalizeSlug(slug);
+    if (!slugValue) {
+      return NextResponse.json({ error: "Missing slug" }, { status: 400 });
+    }
+
+    const body = await parseBody(req);
+    if (!body) {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    const titleCheck = validateTitleAndContent(body);
+    if ("error" in titleCheck) {
+      return NextResponse.json({ error: titleCheck.error }, { status: 400 });
+    }
+
+    const sanitized: Partial<ProblemEntry> = {
+      ...body,
+      title: titleCheck.title,
+      content: titleCheck.content,
+    };
+
+    const ref = adminDb.collection(COLLECTION).doc(slugValue);
+    const doc = await ref.get();
+    const isNew = !doc.exists;
+    const payload = buildPayload(sanitized, slugValue, {
+      includeCreatedAt: isNew,
+      withDefaults: isNew,
+    });
+
+    await ref.set(payload, { merge: true });
+    return NextResponse.json({ ok: true }, { status: isNew ? 201 : 200 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message ?? "Unknown error" }, { status: 500 });
   }
+}
 
-  const out = {
-    title: q.title,
-    titleSlug: q.titleSlug,
-    difficulty: q.difficulty,
-    content: q.content, // HTML; your UI already supports HTML rendering
-    metaData: q.metaData,
-    signature,
-    supportedLanguages: SUPPORTED.map((s) => ({
-      slug: s.slug,
-      judge0LanguageId: s.judge0LanguageId,
-    })),
-    starterCode,
-    exampleTestcases: q.exampleTestcases
-  };
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  try {
+    const { slug } = await params;
+    const slugValue = normalizeSlug(slug);
+    if (!slugValue) {
+      return NextResponse.json({ error: "Missing slug" }, { status: 400 });
+    }
 
-  return NextResponse.json({ question: out });
+    const body = await parseBody(req);
+    if (!body) {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    if (!hasUpdatableField(body)) {
+      return NextResponse.json(
+        { error: "Provide at least one updatable field (title, content, difficulty, starterCode, metaData, exampleTestcases)" },
+        { status: 400 }
+      );
+    }
+
+    if (body.title !== undefined) {
+      if (typeof body.title !== "string" || !body.title.trim()) {
+        return NextResponse.json({ error: "Title must be a non-empty string" }, { status: 400 });
+      }
+      body.title = body.title.trim();
+    }
+
+    if (body.content !== undefined) {
+      if (typeof body.content !== "string" || !body.content.trim()) {
+        return NextResponse.json({ error: "Content must be a non-empty string" }, { status: 400 });
+      }
+    }
+
+    if (body.difficulty !== undefined && typeof body.difficulty !== "string") {
+      return NextResponse.json({ error: "Difficulty must be a string" }, { status: 400 });
+    }
+
+    if (body.metaData !== undefined && typeof body.metaData !== "string") {
+      return NextResponse.json({ error: "metaData must be a string" }, { status: 400 });
+    }
+
+    if (body.exampleTestcases !== undefined && typeof body.exampleTestcases !== "string") {
+      return NextResponse.json({ error: "exampleTestcases must be a string" }, { status: 400 });
+    }
+
+    if (body.starterCode !== undefined && (body.starterCode === null || typeof body.starterCode !== "object")) {
+      return NextResponse.json({ error: "starterCode must be an object" }, { status: 400 });
+    }
+
+    const ref = adminDb.collection(COLLECTION).doc(slugValue);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return NextResponse.json({ error: "Problem not found" }, { status: 404 });
+    }
+
+    const payload = buildPayload(body, slugValue, { includeCreatedAt: false, withDefaults: false });
+    await ref.set(payload, { merge: true });
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message ?? "Unknown error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  try {
+    const { slug } = await params;
+    const slugValue = normalizeSlug(slug);
+    if (!slugValue) {
+      return NextResponse.json({ error: "Missing slug" }, { status: 400 });
+    }
+
+    const ref = adminDb.collection(COLLECTION).doc(slugValue);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return NextResponse.json({ error: "Problem not found" }, { status: 404 });
+    }
+
+    await ref.delete();
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message ?? "Unknown error" }, { status: 500 });
+  }
 }

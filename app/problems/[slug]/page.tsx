@@ -137,38 +137,38 @@ export async function fetchProblemWithFallback(
   signal: AbortSignal
 ): Promise<{ resolved: ProblemQuestion; source: "db" | "leetcode" }> {
   // 1) DB first
-  let res = await fetch(`/api/ingest/problem/${slug}`, { signal });
+  let res = await fetch(`/api/problems/${slug}`, { signal });
   let payload = await readJson(res);
 
-  if (res.status === 404) {
-    // 2) fallback to LeetCode
-    res = await fetch(`/api/leetcode/problems/${slug}`, { signal });
-    payload = await readJson(res);
+  // if (res.status === 404) {
+  //   // 2) fallback to LeetCode
+  //   res = await fetch(`/api/leetcode/problems/${slug}`, { signal });
+  //   payload = await readJson(res);
 
-    if (!res.ok) throw errorFrom(res, payload);
+  //   if (!res.ok) throw errorFrom(res, payload);
 
-    const q = extractQuestion(payload);
-    if (!q) throw new Error("Problem data is missing");
+  //   const q = extractQuestion(payload);
+  //   if (!q) throw new Error("Problem data is missing");
 
-    const resolved = q as ProblemQuestion;
+  //   const resolved = q as ProblemQuestion;
 
-    // ingest ONLY when we had to hit LeetCode (fire-and-forget)
-    fetch("/api/ingest/problem", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: resolved.title,
-        titleSlug: resolved.titleSlug,
-        content: resolved.content,
-        difficulty: resolved.difficulty,
-        starterCode: resolved.starterCode,
-        metaData: resolved.metaData, // standardized ✅
-        exampleTestcases: resolved.exampleTestcases,
-      }),
-    }).catch((e) => console.error("ingest failed", e));
+  //   // ingest ONLY when we had to hit LeetCode (fire-and-forget)
+  //   fetch("/api/ingest/problem", {
+  //     method: "POST",
+  //     headers: { "Content-Type": "application/json" },
+  //     body: JSON.stringify({
+  //       title: resolved.title,
+  //       titleSlug: resolved.titleSlug,
+  //       content: resolved.content,
+  //       difficulty: resolved.difficulty,
+  //       starterCode: resolved.starterCode,
+  //       metaData: resolved.metaData, // standardized ✅
+  //       exampleTestcases: resolved.exampleTestcases,
+  //     }),
+  //   }).catch((e) => console.error("ingest failed", e));
 
-    return { resolved, source: "leetcode" };
-  }
+  //   return { resolved, source: "leetcode" };
+  // }
 
   // DB returned something other than 404
   if (!res.ok) throw errorFrom(res, payload);
