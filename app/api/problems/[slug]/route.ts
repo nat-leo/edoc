@@ -10,9 +10,36 @@ const UPDATABLE_FIELDS = [
   "metaData",
   "exampleTestcases",
   "paramOrder",
+  "tests",
 ] as const;
 
 type UpdatableField = (typeof UPDATABLE_FIELDS)[number];
+
+type HiddenTest = {
+  n: number;
+  args: Record<string, any>;
+  solutionOutput?: unknown;
+};
+
+function normalizeTests(value: unknown): HiddenTest[] | undefined {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === "object" && value !== null) {
+    const entries = Object.entries(value as Record<string, HiddenTest>);
+    entries.sort((a, b) => {
+      const na = Number(a[0]);
+      const nb = Number(b[0]);
+      if (!Number.isNaN(na) && !Number.isNaN(nb)) {
+        return na - nb;
+      }
+      return a[0].localeCompare(b[0]);
+    });
+    return entries.map(([, test]) => test);
+  }
+  return undefined;
+}
 
 type ProblemEntry = {
   title: string;
@@ -23,6 +50,7 @@ type ProblemEntry = {
   metaData: string;
   exampleTestcases: string;
   paramOrder?: string[];
+  tests?: HiddenTest[];
   createdAt?: string;
   updatedAt?: string;
 };
@@ -55,6 +83,7 @@ function buildProblemEntry(data: Partial<ProblemEntry> | undefined, slug: string
     metaData: payload.metaData ?? "",
     exampleTestcases: payload.exampleTestcases ?? "",
     paramOrder: payload.paramOrder,
+    tests: normalizeTests(payload.tests),
     createdAt: payload.createdAt,
     updatedAt: payload.updatedAt,
   };
@@ -90,6 +119,7 @@ function buildPayload(
   setField("metaData", "");
   setField("exampleTestcases", "");
   setField("paramOrder");
+  setField("tests");
 
   return payload;
 }

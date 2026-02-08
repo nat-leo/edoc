@@ -2,8 +2,6 @@
 // POST: create submission from hidden tests -> returns { token, meta }
 // GET : poll by token -> returns Judge0 submission payload (stdout/stderr/status/time/memory)
 
-import { adminDb } from "@/lib/firebase-admin";
-
 const BASE = process.env.RAPIDAPI_BASE_URL!;
 const KEY = process.env.RAPIDAPI_KEY!;
 const HOST = process.env.RAPIDAPI_HOST!;
@@ -11,6 +9,7 @@ const HOST = process.env.RAPIDAPI_HOST!;
 type HiddenTest = {
   n: number;
   args: Record<string, any>;
+  solutionOutput?: unknown;
 };
 
 function assertEnv() {
@@ -75,6 +74,7 @@ def main():
         # print(json.dumps({"type": "CASE_START", "i": i, "n": n}), flush=True)
 
         args = _to_positional(args_by_name)
+        expected_output = t.get("solutionOutput")
 
         # Per-test measurement (Python side)
         tracemalloc.start()
@@ -87,6 +87,10 @@ def main():
         # One JSON line per test
         print(json.dumps({
             "n": n,
+            "args": args_by_name,
+            "result": result,
+            "expected": expected_output,
+            "matches": result == expected_output,
             "runtime_ms": dt_ms,
             "mb": peak,
         }), flush=True)
@@ -108,19 +112,39 @@ export async function POST(req: Request) {
     if (!slug) return new Response('{"error":"Missing slug"}', { status: 400 });
     if (!source_code) return new Response('{"error":"Missing source_code"}', { status: 400 });
 
-    // Load hidden tests
-    const snap = await adminDb.collection("generated_problems").doc(slug).get();
-    if (!snap.exists) return new Response('{"error":"Problem not found"}', { status: 404 });
+    const origin = new URL(req.url).origin;
+    const problemRes = await fetch(`${origin}/api/problems/${slug}`, { cache: "no-store" });
+    const problemPayload = await problemRes.json().catch(() => ({} as any));
 
-    const data = snap.data() ?? {};
-    const tests = data.tests as HiddenTest[] | undefined;
-    const paramOrder = data.paramOrder as string[] | undefined;
+    if (!problemRes.ok) {
+      return new Response(JSON.stringify(problemPayload), {
+        status: problemRes.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const problem = problemPayload?.problem;
+    if (!problem) {
+      return new Response('{"error":"Problem payload missing"}', {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const tests = problem.tests as HiddenTest[] | undefined;
+    const paramOrder = problem.paramOrder as string[] | undefined;
 
     if (!Array.isArray(tests) || tests.length === 0) {
-      return new Response('{"error":"No hidden tests found"}', { status: 400 });
+      return new Response('{"error":"No hidden tests found"}', {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
     if (!Array.isArray(paramOrder) || paramOrder.length === 0) {
-      return new Response('{"error":"Missing paramOrder in problem doc"}', { status: 400 });
+      return new Response('{"error":"Missing paramOrder in problem doc"}', {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     // Build harness that runs hidden tests
