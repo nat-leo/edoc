@@ -62,6 +62,7 @@ type ProblemQuestion = {
   supportedLanguages?: SupportedLanguage[];
   starterCode?: Record<string, string>;
   exampleTestcases?: string;
+  paramOrder?: string[];
   metaData?: string; // This is JSON, but it's in string format.
   [key: string]: unknown;
 };
@@ -278,7 +279,15 @@ export default function CodeEditorPage() {
     }
   }, [language, problemData]);
 
-  const paramNames = (problemData as any)?.signature?.params?.map((p: any) => p.name) ?? ["input"];
+  const signatureParamNames =
+    problemData?.signature?.params?.map((p) => p.name) ?? [];
+  const paramOrderNames = problemData?.paramOrder ?? [];
+  const paramNames =
+    signatureParamNames.length > 0
+      ? signatureParamNames
+      : paramOrderNames.length > 0
+      ? paramOrderNames
+      : ["input"];
   const [caseIndex, setCaseIndex] = React.useState(0);
   const [cases, setCases] = React.useState<Testcase[]>([]);
   const serializedCustomTests = React.useMemo(

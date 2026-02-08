@@ -9,6 +9,7 @@ const UPDATABLE_FIELDS = [
   "starterCode",
   "metaData",
   "exampleTestcases",
+  "paramOrder",
 ] as const;
 
 type UpdatableField = (typeof UPDATABLE_FIELDS)[number];
@@ -21,6 +22,7 @@ type ProblemEntry = {
   starterCode: Record<string, string>;
   metaData: string;
   exampleTestcases: string;
+  paramOrder?: string[];
   createdAt?: string;
   updatedAt?: string;
 };
@@ -52,6 +54,7 @@ function buildProblemEntry(data: Partial<ProblemEntry> | undefined, slug: string
     starterCode: payload.starterCode ?? {},
     metaData: payload.metaData ?? "",
     exampleTestcases: payload.exampleTestcases ?? "",
+    paramOrder: payload.paramOrder,
     createdAt: payload.createdAt,
     updatedAt: payload.updatedAt,
   };
@@ -86,6 +89,7 @@ function buildPayload(
   setField("starterCode", {});
   setField("metaData", "");
   setField("exampleTestcases", "");
+  setField("paramOrder");
 
   return payload;
 }
@@ -234,7 +238,10 @@ export async function PATCH(
 
     if (!hasUpdatableField(body)) {
       return NextResponse.json(
-        { error: "Provide at least one updatable field (title, content, difficulty, starterCode, metaData, exampleTestcases)" },
+        {
+          error:
+            "Provide at least one updatable field (title, content, difficulty, starterCode, metaData, exampleTestcases, paramOrder)",
+        },
         { status: 400 }
       );
     }
@@ -262,6 +269,12 @@ export async function PATCH(
 
     if (body.exampleTestcases !== undefined && typeof body.exampleTestcases !== "string") {
       return NextResponse.json({ error: "exampleTestcases must be a string" }, { status: 400 });
+    }
+
+    if (body.paramOrder !== undefined) {
+      if (!Array.isArray(body.paramOrder) || body.paramOrder.some((item) => typeof item !== "string")) {
+        return NextResponse.json({ error: "paramOrder must be an array of strings" }, { status: 400 });
+      }
     }
 
     if (body.starterCode !== undefined && (body.starterCode === null || typeof body.starterCode !== "object")) {
