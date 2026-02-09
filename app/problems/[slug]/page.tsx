@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { JUDGE0_LANGUAGE_ID, Language, ProblemSignature as StarterProblemSignature, renderStarterCode } from "@/lib/starter-code";
+import { badgeFromCase, CaseBadge, JudgeCaseResult, RunResponse } from "@/lib/judge0";
 
 type RunStatus = "idle" | "running" | "success" | "error";
 
@@ -64,10 +65,11 @@ type ProblemQuestion = {
   exampleTestcases?: string;
   paramOrder?: string[];
   metaData?: string; // This is JSON, but it's in string format.
+  tests?: any[];
   [key: string]: unknown;
 };
 
-type Testcase = Record<string, string>;
+type Testcase = Record<string, string> & { _expected?: string };
 
 function parseExampleTestcasesToCases(
   exampleTestcases: string,
@@ -91,6 +93,34 @@ function parseExampleTestcasesToCases(
   return out;
 }
 
+function testsToCases(
+  tests: any[] | undefined,
+  paramNames: string[]
+): Testcase[] {
+  if (!Array.isArray(tests) || !tests.length) return [];
+  const names = paramNames.length ? paramNames : ["input"];
+  return tests.slice(0, 3).map((t) => {
+    const args = t?.args ?? {};
+    const obj: Testcase = {};
+    for (const name of names) {
+      const val = args[name];
+      obj[name] =
+        typeof val === "string"
+          ? val
+          : val === undefined
+          ? ""
+          : JSON.stringify(val);
+    }
+    if (typeof t?.solutionOutput !== "undefined") {
+      obj._expected =
+        typeof t.solutionOutput === "string"
+          ? t.solutionOutput
+          : JSON.stringify(t.solutionOutput);
+    }
+    return obj;
+  });
+}
+
 function serializeCasesToExampleTestcases(
   cases: Testcase[],
   paramNames: string[]
@@ -104,6 +134,15 @@ function serializeCasesToExampleTestcases(
         .join("\n")
     )
     .join("\n");
+}
+
+function parseJsonMaybe(v: string | undefined) {
+  if (typeof v === "undefined") return undefined;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return v;
+  }
 }
 
 type AnyObj = Record<string, unknown>;
@@ -251,8 +290,11 @@ export default function CodeEditorPage() {
   const [customTests, setCustomTests] = React.useState<string>("");
 
   const [status, setStatus] = React.useState<RunStatus>("idle");
-  const [results, setResults] = React.useState<{ stdout?: string; stderr?: string, time?: string, memory?: string }>({});
+  const [results, setResults] = React.useState<RunResponse | null>(null);
+  const [caseResults, setCaseResults] = React.useState<Record<number, JudgeCaseResult>>({});
+  const [caseBadges, setCaseBadges] = React.useState<Record<number, CaseBadge>>({});
   const [activeTab, setActiveTab] = React.useState<"testcases" | "results">("testcases");
+  const [openResultCase, setOpenResultCase] = React.useState<number | null>(null);
 
   const problemTitle =
     problemData?.title ?? (problemLoading ? "Loading problem..." : "Problem");
@@ -300,8 +342,12 @@ export default function CodeEditorPage() {
 
     const names = paramNames.length ? paramNames : ["input"];
 
+    const seededFromTests = testsToCases(problemData.tests as any[], names);
+
     const seeded =
-      problemData.exampleTestcases && paramNames.length
+      seededFromTests.length > 0
+        ? seededFromTests
+        : problemData.exampleTestcases && paramNames.length
         ? parseExampleTestcasesToCases(problemData.exampleTestcases, paramNames)
         : [Object.fromEntries(names.map((n) => [n, ""])) as Testcase];
 
@@ -311,113 +357,107 @@ export default function CodeEditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [problemData?.titleSlug]);
 
-  async function onRun() {
+  function updateCaseState(nextCases: JudgeCaseResult[]) {
+    setCaseResults((prev) => {
+      const merged = { ...prev };
+      for (const c of nextCases) merged[c.i] = c;
+      return merged;
+    });
+
+    setCaseBadges((prev) => {
+      const merged = { ...prev };
+      for (const c of nextCases) merged[c.i] = badgeFromCase(c);
+      return merged;
+    });
+  }
+
+  function buildRunnerCases() {
+    return cases.map((c, i) => {
+      const { _expected, ...args } = c;
+      return {
+        i,
+        args,
+        expected: typeof _expected !== "undefined" ? parseJsonMaybe(_expected) : undefined,
+      };
+    });
+  }
+
+  async function execute(mode: "run" | "submit") {
     setStatus("running");
-    setResults({ stdout: "Running...", stderr: "" });
+    setResults(null);
+
+    // optimistic badge: mark visible cases as running
+    setCaseBadges((prev) => {
+      const next: Record<number, CaseBadge> = { ...prev };
+      cases.forEach((_, i) => {
+        next[i] = "running";
+      });
+      return next;
+    });
 
     const langId = JUDGE0_LANGUAGE_ID[language as Language];
     if (!langId) throw new Error(`Unsupported language: ${language}`);
 
     try {
-      // 1) submit -> token
-      const submitRes = await fetch("/api/run", {
+      const isRun = mode === "run";
+      const submitRes = await fetch(isRun ? "/api/run" : "/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source_code: code,
-          language_id: langId, // <-- make sure this is a Judge0 language_id number
-          stdin: customTests ?? "",
-          metaData: problemData?.metaData ?? null,
-          test_cases: serializedCustomTests || null,
-        }),
+        body: JSON.stringify(
+          isRun
+            ? {
+                source_code: code,
+                language_id: langId,
+                metaData: problemData?.metaData ?? null,
+                test_cases: serializedCustomTests || null,
+                cases_struct: buildRunnerCases(),
+              }
+            : {
+                slug,
+                source_code: code,
+                language_id: langId,
+              }
+        ),
       });
 
       const submit = await submitRes.json().catch(() => ({} as any));
-      if (!submitRes.ok) throw new Error(submit?.error ?? "Run submit failed");
+      if (!submitRes.ok) throw new Error(submit?.error ?? `${mode} submit failed`);
 
       const token = submit?.token as string | undefined;
-      if (!token) throw new Error("No token returned from /api/run");
+      if (!token) throw new Error("No token returned from API");
 
-      // 2) poll until finished
-      let poll: any = null;
+      let poll: RunResponse | null = null;
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 500));
-
-        const pollRes = await fetch(`/api/run?token=${encodeURIComponent(token)}`);
-        poll = await pollRes.json().catch(() => ({} as any));
-        if (!pollRes.ok) throw new Error(poll?.error ?? "Run poll failed");
+        const pollRes = await fetch(`/${mode === "run" ? "api/run" : "api/submit"}?token=${encodeURIComponent(token)}`);
+        poll = await pollRes.json().catch(() => null);
+        if (!pollRes.ok) throw new Error((poll as any)?.error ?? `${mode} poll failed`);
 
         const statusId = poll?.status?.id;
-        if (statusId && statusId !== 1 && statusId !== 2) break; // 1=In Queue, 2=Processing
+        if (statusId && statusId !== 1 && statusId !== 2) break;
       }
 
-      setResults({
-        stdout: String(poll?.stdout ?? ""),
-        stderr: String(poll?.stderr ?? poll?.compile_output ?? poll?.message ?? ""),
-        time: String(poll?.time ?? poll?.compile_output ?? poll?.message ?? ""),
-        memory: String(poll?.memory ?? poll?.compile_output ?? poll?.message ?? ""),
-      });
+      if (poll) {
+        updateCaseState(poll.cases ?? []);
+        setResults(poll);
+      }
       setStatus("success");
     } catch (e) {
-      setResults({ stdout: "", stderr: e instanceof Error ? e.message : "Run failed", time: "", memory: "" });
+      setResults({
+        token: undefined,
+        status: undefined,
+        stdout_raw: "",
+        stderr_raw: e instanceof Error ? e.message : "Run failed",
+        cases: [],
+      });
       setStatus("error");
     } finally {
       setActiveTab("results");
     }
   }
 
-  async function onSubmit() {
-    setStatus("running");
-    setResults({ stdout: "Running...", stderr: "" });
-
-    const langId = JUDGE0_LANGUAGE_ID[language as Language];
-    if (!langId) throw new Error(`Unsupported language: ${language}`);
-
-    try {
-      // 1) submit -> token
-      const submitRes = await fetch("/api/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          slug,                 // titleSlug
-          source_code: code,    // editor code
-          language_id: 32,      // python in your setup
-        }),
-      });
-
-      const submit = await submitRes.json().catch(() => ({} as any));
-      if (!submitRes.ok) throw new Error(submit?.error ?? "Run submit failed");
-
-      const token = submit?.token as string | undefined;
-      if (!token) throw new Error("No token returned from /api/run");
-
-      // 2) poll until finished
-      let poll: any = null;
-      for (let i = 0; i < 30; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-
-        const pollRes = await fetch(`/api/submit?token=${encodeURIComponent(token)}`);
-        poll = await pollRes.json().catch(() => ({} as any));
-        if (!pollRes.ok) throw new Error(poll?.error ?? "Run poll failed");
-
-        const statusId = poll?.status?.id;
-        if (statusId && statusId !== 1 && statusId !== 2) break; // 1=In Queue, 2=Processing
-      }
-
-      setResults({
-        stdout: String(poll?.stdout ?? ""),
-        stderr: String(poll?.stderr ?? poll?.compile_output ?? poll?.message ?? ""),
-        time: String(poll?.time ?? poll?.compile_output ?? poll?.message ?? ""),
-        memory: String(poll?.memory ?? poll?.compile_output ?? poll?.message ?? ""),
-      });
-      setStatus("success");
-    } catch (e) {
-      setResults({ stdout: "", stderr: e instanceof Error ? e.message : "Run failed", time: "", memory: "" });
-      setStatus("error");
-    } finally {
-      setActiveTab("results");
-    }
-  }
+  const onRun = () => execute("run");
+  const onSubmit = () => execute("submit");
 
   const statusPill = (() => {
     if (status === "running") return <Badge variant="secondary">Running…</Badge>;
@@ -425,6 +465,12 @@ export default function CodeEditorPage() {
     if (status === "error") return <Badge variant="destructive">Error</Badge>;
     return <Badge variant="outline">Idle</Badge>;
   })();
+
+  function badgeClass(b: CaseBadge | undefined) {
+    if (b === "pass") return "border border-emerald-500 text-emerald-600";
+    if (b === "fail" || b === "error") return "border border-destructive text-destructive";
+    else return "rounded-full text-black";
+  }
 
   const isHtml = (s: string) => /<\/?[a-z][\s\S]*>/i.test(s)
 
@@ -570,7 +616,7 @@ export default function CodeEditorPage() {
                                   variant={i === caseIndex ? "secondary" : "ghost"}
                                   size="sm"
                                   onClick={() => setCaseIndex(i)}
-                                  className="rounded-full"
+                                  className={`rounded-full ${badgeClass(caseBadges[i])}`}
                                 >
                                   Case {i + 1}
                                 </Button>
@@ -644,31 +690,52 @@ export default function CodeEditorPage() {
                       <Card className="min-h-0 flex-1 p-3">
                         <ScrollArea className="h-full">
                           <div className="space-y-3">
-                            {results.stdout ? (
+                            {results?.cases?.length ? (
+                              <div className="space-y-2">
+                                <div className="text-xs font-semibold text-muted-foreground">
+                                  {status === "success" || status === "error" ? "Pass/Fail" : "Cases"}
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                  {results.cases.map((c) => {
+                                    const open = openResultCase === c.i;
+                                    const badge = caseBadges[c.i];
+                                    return (
+                                      <Card key={c.i} className="p-2 border">
+                                        <button
+                                          type="button"
+                                          onClick={() => setOpenResultCase(open ? null : c.i)}
+                                          className="flex w-full items-center justify-between text-xs font-semibold"
+                                        >
+                                          <span>Case {c.i + 1}</span>
+                                          <span className={`px-2 py-1 text-[10px] ${badgeClass(badge)}`}>
+                                            {badge ?? "ran"}
+                                          </span>
+                                        </button>
+                                        {open ? (
+                                          <pre className="mt-2 whitespace-pre-wrap break-words text-[11px] font-mono text-foreground">
+                                            {JSON.stringify(c, null, 2)}
+                                          </pre>
+                                        ) : null}
+                                      </Card>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {results?.stdout_raw ? (
                               <pre className="whitespace-pre-wrap font-mono text-sm text-foreground">
-                                {results.stdout}
+                                {results.stdout_raw}
                               </pre>
                             ) : null}
 
-                            {results.stderr ? (
+                            {results?.stderr_raw ? (
                               <pre className="whitespace-pre-wrap font-mono text-sm text-destructive">
-                                {results.stderr}
+                                {results.stderr_raw}
                               </pre>
                             ) : null}
 
-                            {results.time ? (
-                              <pre className="whitespace-pre-wrap font-mono text-sm text-foreground">
-                                {results.time}
-                              </pre>
-                            ) : null}
-
-                            {results.memory ? (
-                              <pre className="whitespace-pre-wrap font-mono text-sm text-foreground">
-                                {results.memory}
-                              </pre>
-                            ) : null}
-
-                            {!results.stdout && !results.stderr ? (
+                            {!results?.stdout_raw && !results?.stderr_raw && !results?.cases?.length ? (
                               <p className="text-sm text-muted-foreground">
                                 No results yet. Click Run or Submit.
                               </p>

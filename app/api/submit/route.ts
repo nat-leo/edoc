@@ -1,6 +1,8 @@
 // app/api/submit/route.ts
 // POST: create submission from hidden tests -> returns { token, meta }
-// GET : poll by token -> returns Judge0 submission payload (stdout/stderr/status/time/memory)
+// GET : poll by token -> returns normalized Judge0 payload with parsed cases
+
+import { makePythonRunnerHarness, parseNdjson, RunResponse, RunnerCase } from "@/lib/judge0";
 
 const BASE = process.env.RAPIDAPI_BASE_URL!;
 const KEY = process.env.RAPIDAPI_KEY!;
@@ -16,88 +18,6 @@ function assertEnv() {
   if (!BASE || !KEY || !HOST) {
     throw new Error("Missing RAPIDAPI env vars (RAPIDAPI_BASE_URL / RAPIDAPI_KEY / RAPIDAPI_HOST)");
   }
-}
-
-function makePythonHarnessFromHiddenTests(opts: {
-  source_code: string;
-  funcName?: string; // optional, we can infer from metadata if you later add it
-  tests: HiddenTest[];
-  paramOrder: string[];
-}) {
-  const { source_code, tests, paramOrder } = opts;
-
-  // Embed tests + param order as JSON strings to avoid Python repr issues
-  const TESTS_JSON = JSON.stringify(tests);
-  const ORDER_JSON = JSON.stringify(paramOrder);
-
-  return `
-  
-# ---- USER CODE (verbatim) ----
-from typing import List
-
-${source_code}
-
-# ---- HARNESS (hidden tests) ----
-import json
-import time
-import traceback
-import tracemalloc
-
-TESTS = json.loads(${JSON.stringify(TESTS_JSON)})
-PARAM_ORDER = json.loads(${JSON.stringify(ORDER_JSON)})
-
-def _to_positional(args_by_name):
-    # Build positional args in the exact paramOrder
-    return [args_by_name[name] for name in PARAM_ORDER]
-
-def main():
-    # Expect user code defines: class Solution
-    sol = Solution()
-
-    # Try to infer the method name:
-    # - If Solution has only one public method (not starting with "_"), use it.
-    # - Otherwise you should pass metadata/funcName later; for now we do best effort.
-    public = [k for k in dir(sol) if not k.startswith("_") and callable(getattr(sol, k))]
-    if len(public) == 1:
-        func_name = public[0]
-    else:
-        # Ambiguous. Give a helpful error.
-        raise Exception("Ambiguous Solution methods: " + ", ".join(public) + ". Provide metadata/func name.")
-
-    fn = getattr(sol, func_name)
-
-    for i, t in enumerate(TESTS):
-        n = t.get("n")
-        args_by_name = t.get("args", {})
-
-        # Emit a marker BEFORE running, so crashes can be tied to a case index.
-        # print(json.dumps({"type": "CASE_START", "i": i, "n": n}), flush=True)
-
-        args = _to_positional(args_by_name)
-        expected_output = t.get("solutionOutput")
-
-        # Per-test measurement (Python side)
-        tracemalloc.start()
-        t0 = time.perf_counter()
-        result = fn(*args)
-        dt_ms = (time.perf_counter() - t0) * 1000.0
-        current, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-
-        # One JSON line per test
-        print(json.dumps({
-            "n": n,
-            "args": args_by_name,
-            "result": result,
-            "expected": expected_output,
-            "matches": result == expected_output,
-            "runtime_ms": dt_ms,
-            "mb": peak,
-        }), flush=True)
-
-if __name__ == "__main__":
-    main()
-`;
 }
 
 export async function POST(req: Request) {
@@ -148,9 +68,16 @@ export async function POST(req: Request) {
     }
 
     // Build harness that runs hidden tests
-    const final_source_code = makePythonHarnessFromHiddenTests({
+    const runnerCases: RunnerCase[] = tests.map((t) => ({
+      n: t.n,
+      args: t.args ?? {},
+      expected: typeof t.solutionOutput === "undefined" ? null : t.solutionOutput,
+    }));
+
+    const final_source_code = makePythonRunnerHarness({
       source_code,
-      tests,
+      metaData: problem.metaData ?? null,
+      cases: runnerCases,
       paramOrder,
     });
 
@@ -192,7 +119,6 @@ export async function POST(req: Request) {
         slug,
         testCount: tests.length,
         paramOrder,
-        // stdout will contain CASE_START/CASE_RESULT lines
         stdoutFormat: "jsonl",
       },
     };
@@ -229,7 +155,38 @@ export async function GET(req: Request) {
       },
     });
 
-    return new Response(await r.text(), { status: r.status });
+    const text = await r.text();
+
+    let payload: any;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = { raw: text };
+    }
+
+    const stdout_raw = String(payload?.stdout ?? "");
+    const stderr_raw = String(
+      payload?.stderr ?? payload?.compile_output ?? payload?.message ?? ""
+    );
+
+    const { cases, unparsed_lines } = parseNdjson(stdout_raw);
+
+    const out: RunResponse = {
+      token,
+      status: payload?.status,
+      stdout_raw,
+      stderr_raw,
+      cases,
+      compile_output: payload?.compile_output ?? null,
+      time: payload?.time ?? null,
+      memory: payload?.memory ?? null,
+      unparsed_lines,
+    };
+
+    return new Response(JSON.stringify(out), {
+      status: r.status,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message ?? "Unknown error" }), {
       status: 500,

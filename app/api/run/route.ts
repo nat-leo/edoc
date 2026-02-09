@@ -1,93 +1,56 @@
 // app/api/run/route.ts
 // POST: create submission -> returns { token }
-// GET : poll by token -> returns Judge0 submission payload
+// GET : poll by token -> returns normalized Judge0 payload with parsed cases
 
-function parseScalarOrJson(s: string): any {
-  // LeetCode exampleTestcases lines are usually valid JSON for arrays/strings/bools/null,
-  // but integers are plain "9" which is also valid JSON.
-  try {
-    return JSON.parse(s);
-  } catch {
-    // fallback: treat as raw string
-    return s;
-  }
-}
-
-function parseExampleTestcases(exampleTestcases: string, arity: number): any[][] {
-  const lines = exampleTestcases
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  if (arity <= 0) throw new Error("Invalid arity");
-  if (lines.length % arity !== 0) {
-    throw new Error(`exampleTestcases line count (${lines.length}) not divisible by arity (${arity})`);
-  }
-
-  const cases: any[][] = [];
-  for (let i = 0; i < lines.length; i += arity) {
-    const args = lines.slice(i, i + arity).map(parseScalarOrJson);
-    cases.push(args);
-  }
-  return cases;
-}
-
-export function makePythonHarnessFromExamples(opts: {
-  source_code: string;
-  metaData: string;          // metaData JSON string
-  exampleTestcases: string;  // exampleTestcases string
-}) {
-  const { source_code, metaData, exampleTestcases } = opts;
-
-  // parse metadata to get arity + param names
-  const md = JSON.parse(metaData);
-  const paramNames: string[] = (md.params ?? []).map((p: any) => p.name);
-  const arity = paramNames.length;
-
-  const cases = parseExampleTestcases(exampleTestcases, arity);
-
-  return `
-# ---- USER CODE (verbatim) ----
-from typing import List
-import json
-
-${source_code}
-
-# ---- HARNESS (examples) ----
-
-METADATA = ${JSON.stringify(metaData)}
-md = json.loads(METADATA)
-
-FUNC_NAME = md["name"]
-PARAMS = [p["name"] for p in md.get("params", [])]
-
-CASES = json.loads(${JSON.stringify(JSON.stringify(cases))})
-
-def main():
-    sol = Solution()
-    fn = getattr(sol, FUNC_NAME)
-
-    for i, args in enumerate(CASES):
-        result = fn(*args)
-        print(json.dumps({"i": i, "args": args, "result": result}))
-
-if __name__ == "__main__":
-    main()
-`;
-}
+import { makePythonRunnerHarness, parseNdjson, RunnerCase, RunResponse } from "@/lib/judge0";
 
 const BASE = process.env.RAPIDAPI_BASE_URL!;
 const KEY = process.env.RAPIDAPI_KEY!;
 const HOST = process.env.RAPIDAPI_HOST!;
 
-export async function POST(req: Request) {
-  const body = await req.json();
-  console.log(body);
-  const { source_code, language_id, stdin, metaData, test_cases } = body;
+function assertEnv() {
+  if (!BASE || !KEY || !HOST) {
+    throw new Error("Missing RAPIDAPI env vars (RAPIDAPI_BASE_URL / RAPIDAPI_KEY / RAPIDAPI_HOST)");
+  }
+}
 
-  const final_source_code =
-    metaData ? makePythonHarnessFromExamples({ source_code, metaData, exampleTestcases: test_cases }) : source_code;
+function parseMetaParamNames(metaData?: string | null): string[] {
+  if (!metaData) return [];
+  try {
+    const md = JSON.parse(metaData);
+    const params = Array.isArray(md?.params) ? md.params : [];
+    return params.map((p: any) => p?.name).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
 
+function casesFromExampleTestcases(exampleTestcases: string | null | undefined, paramNames: string[]): RunnerCase[] {
+  if (!exampleTestcases) return [];
+
+  const names = paramNames.length ? paramNames : ["input"];
+  const lines = exampleTestcases
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const arity = names.length || 1;
+  const out: RunnerCase[] = [];
+
+  for (let i = 0; i < lines.length; i += arity) {
+    const chunk = lines.slice(i, i + arity);
+    if (chunk.length < arity) break;
+
+    const args: Record<string, string> = {};
+    for (let j = 0; j < arity; j++) args[names[j]] = chunk[j];
+
+    out.push({ i: out.length, args });
+  }
+
+  return out;
+}
+
+async function postToJudge0(payload: any) {
   const url = new URL(`${BASE}/submissions`);
   url.searchParams.set("base64_encoded", "false");
   url.searchParams.set("wait", "false");
@@ -100,17 +63,13 @@ export async function POST(req: Request) {
       "x-rapidapi-host": HOST,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ source_code: final_source_code, language_id, stdin: stdin ?? "" }),
+    body: JSON.stringify(payload),
   });
 
-  return new Response(await r.text(), { status: r.status });
+  return r;
 }
 
-
-export async function GET(req: Request) {
-  const token = new URL(req.url).searchParams.get("token");
-  if (!token) return new Response('{"error":"Missing token"}', { status: 400 });
-
+async function pollFromJudge0(token: string) {
   const url = new URL(`${BASE}/submissions/${token}`);
   url.searchParams.set("base64_encoded", "false");
   url.searchParams.set("fields", "stdout,stderr,status,time,memory");
@@ -124,5 +83,91 @@ export async function GET(req: Request) {
     },
   });
 
-  return new Response(await r.text(), { status: r.status });
+  return r;
+}
+
+export async function POST(req: Request) {
+  try {
+    assertEnv();
+
+    const body = await req.json().catch(() => ({}));
+    const { source_code, language_id, metaData, test_cases, cases_struct } = body;
+
+    if (!source_code) return new Response('{"error":"Missing source_code"}', { status: 400 });
+
+    const paramOrder = parseMetaParamNames(typeof metaData === "string" ? metaData : undefined);
+    const cases: RunnerCase[] =
+      Array.isArray(cases_struct) && cases_struct.length > 0
+        ? cases_struct
+        : casesFromExampleTestcases(typeof test_cases === "string" ? test_cases : null, paramOrder);
+
+    const final_source_code = makePythonRunnerHarness({
+      source_code,
+      metaData: typeof metaData === "string" ? metaData : null,
+      cases,
+      paramOrder,
+    });
+
+    const r = await postToJudge0({
+      source_code: final_source_code,
+      language_id: Number(language_id ?? 32),
+      stdin: "",
+    });
+
+    const text = await r.text();
+    return new Response(text, { status: r.status, headers: { "Content-Type": "application/json" } });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e?.message ?? "Unknown error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+}
+
+export async function GET(req: Request) {
+  try {
+    assertEnv();
+
+    const token = new URL(req.url).searchParams.get("token");
+    if (!token) return new Response('{"error":"Missing token"}', { status: 400 });
+
+    const r = await pollFromJudge0(token);
+    const text = await r.text();
+
+    let payload: any;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = { raw: text };
+    }
+
+    const stdout_raw = String(payload?.stdout ?? "");
+    const stderr_raw = String(
+      payload?.stderr ?? payload?.compile_output ?? payload?.message ?? ""
+    );
+
+    const { cases, unparsed_lines } = parseNdjson(stdout_raw);
+
+    const out: RunResponse = {
+      token,
+      status: payload?.status,
+      stdout_raw,
+      stderr_raw,
+      cases,
+      compile_output: payload?.compile_output ?? null,
+      time: payload?.time ?? null,
+      memory: payload?.memory ?? null,
+      unparsed_lines,
+    };
+
+    return new Response(JSON.stringify(out), {
+      status: r.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e?.message ?? "Unknown error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 }
