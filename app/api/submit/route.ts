@@ -2,11 +2,33 @@
 // POST: create submission from hidden tests -> returns { token, meta }
 // GET : poll by token -> returns normalized Judge0 payload with parsed cases
 
+import { cookies } from "next/headers";
+
+import { adminAuth } from "@/lib/firebase-admin";
 import { makePythonRunnerHarness, parseNdjson, RunResponse, RunnerCase } from "@/lib/judge0";
 
 const BASE = process.env.RAPIDAPI_BASE_URL!;
 const KEY = process.env.RAPIDAPI_KEY!;
 const HOST = process.env.RAPIDAPI_HOST!;
+
+function unauthorized() {
+  return new Response('{"error":"Unauthorized"}', {
+    status: 401,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+async function requireAuth() {
+  const token = (await cookies()).get("__session")?.value;
+  if (!token) return null;
+
+  try {
+    return await adminAuth.verifySessionCookie(token, true);
+  } catch (err) {
+    console.error("Auth verification failed", err);
+    return null;
+  }
+}
 
 type HiddenTest = {
   n: number;
@@ -23,6 +45,9 @@ function assertEnv() {
 export async function POST(req: Request) {
   try {
     assertEnv();
+
+    const user = await requireAuth();
+    if (!user) return unauthorized();
 
     const body = await req.json().catch(() => ({}));
     const slug = String(body?.slug ?? "");
@@ -138,6 +163,9 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
   try {
     assertEnv();
+
+    const user = await requireAuth();
+    if (!user) return unauthorized();
 
     const token = new URL(req.url).searchParams.get("token");
     if (!token) return new Response('{"error":"Missing token"}', { status: 400 });

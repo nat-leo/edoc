@@ -1,6 +1,7 @@
 import "server-only";
 import { getApps, initializeApp, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
 
 const projectId = process.env.FIREBASE_PROJECT_ID!;
 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL!;
@@ -18,3 +19,4 @@ export const adminApp =
       });
 
 export const adminDb = getFirestore(adminApp);
+export const adminAuth = getAuth(adminApp);
