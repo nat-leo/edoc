@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useParams } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import Editor from "@monaco-editor/react";
 
 import DOMPurify from "dompurify";
@@ -336,6 +336,15 @@ export default function CodeEditorPage() {
     () => serializeCasesToExampleTestcases(cases, paramNames),
     [cases, paramNames]
   );
+  const pathname = usePathname();
+  const router = useRouter();
+  const redirectingRef = React.useRef(false);
+
+  const redirectToLogin = React.useCallback(() => {
+    if (redirectingRef.current) return;
+    redirectingRef.current = true;
+    router.push(`/login?redirectTo=${encodeURIComponent(pathname)}`);
+  }, [pathname, router]);
 
   React.useEffect(() => {
     if (!problemData) return;
@@ -421,7 +430,13 @@ export default function CodeEditorPage() {
       });
 
       const submit = await submitRes.json().catch(() => ({} as any));
-      if (!submitRes.ok) throw new Error(submit?.error ?? `${mode} submit failed`);
+      if (!submitRes.ok) {
+        if (!isRun && submitRes.status === 401) {
+          redirectToLogin();
+          throw new Error("Please sign in to submit");
+        }
+        throw new Error(submit?.error ?? `${mode} submit failed`);
+      }
 
       const token = submit?.token as string | undefined;
       if (!token) throw new Error("No token returned from API");
@@ -431,7 +446,13 @@ export default function CodeEditorPage() {
         await new Promise((r) => setTimeout(r, 500));
         const pollRes = await fetch(`/${mode === "run" ? "api/run" : "api/submit"}?token=${encodeURIComponent(token)}`);
         poll = await pollRes.json().catch(() => null);
-        if (!pollRes.ok) throw new Error((poll as any)?.error ?? `${mode} poll failed`);
+        if (!pollRes.ok) {
+          if (!isRun && pollRes.status === 401) {
+            redirectToLogin();
+            throw new Error("Session expired. Please sign in again.");
+          }
+          throw new Error((poll as any)?.error ?? `${mode} poll failed`);
+        }
 
         const statusId = poll?.status?.id;
         if (statusId && statusId !== 1 && statusId !== 2) break;
