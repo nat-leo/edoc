@@ -75,7 +75,6 @@ export default function LoginClient() {
       }}
       onSignUp={async ({ email, password }) => {
         await signUpWithEmailPassword({ email, password });
-        // You can auto-redirect or force them to sign in after verifying email
         router.push(redirectTo);
         router.refresh();
       }}
@@ -373,10 +372,6 @@ export function AuthPage({
             </p>
           </CardFooter>
         </Card>
-
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          Protected by standard security controls (rate limits, audit logs, etc.) — once you wire them in.
-        </p>
       </div>
     </div>
   );
