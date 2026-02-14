@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react"
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -51,7 +52,7 @@ type AuthPageProps = {
   onOAuth?: (provider: "google" | "github") => Promise<void>;
 };
 
-export default function LoginClient() {
+export function LoginClient() {
   const router = useRouter();
   const sp = useSearchParams();
   const redirectTo = sp.get("redirectTo") ?? "/";
@@ -375,4 +376,12 @@ export function AuthPage({
       </div>
     </div>
   );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="p-6">Loading…</div>}>
+      <LoginClient />
+    </Suspense>
+  )
 }
