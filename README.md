@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# edocteel – Developer README
+
+Developer‑oriented notes for working on the codebase (Next.js 16 / React 19 / TypeScript / Tailwind 4).
+
+## Stack & Architecture
+- Next.js App Router, server actions disabled; mostly serverless API routes under `app/api/*`.
+- UI: Tailwind CSS 4, Radix UI, shadcn-style primitives, Monaco editor for the IDE experience.
+- Auth: Firebase client SDK + session cookies exchanged via `/api/session/*` using Firebase Admin.
+- Judge: Judge0 (RapidAPI) proxied through `/api/run` (public sample cases) and `/api/submit` (auth‑gated hidden tests).
+- Data: Firestore collections (`generated_problems` primary; `problem` legacy ingest target).
 
 ## Getting Started
-
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+1) Install deps: `npm install`
+2) Create `./.env.local` with:
 ```
+NEXT_PUBLIC_FIREBASE_API_KEY=xxx
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=xxx.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=xxx
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+FIREBASE_PROJECT_ID=xxx
+FIREBASE_CLIENT_EMAIL=service-account@xxx.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+RAPIDAPI_BASE_URL=https://judge0-ce.p.rapidapi.com
+RAPIDAPI_KEY=your_rapidapi_key
+RAPIDAPI_HOST=judge0-ce.p.rapidapi.com
+```
+3) Run dev server: `npm run dev` (Node 18+ recommended). Open http://localhost:3000.
+4) Lint: `npm run lint` (ESLint 9 / Next config).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Key Flows
+- **Auth flow**: Client signs in with Firebase → `SessionCookieSync` posts ID token to `/api/session/login` → server sets `__session` HttpOnly cookie used by protected routes (`/api/submit`).
+- **Solve a problem**:
+  1. Page `app/problems/[slug]/page.tsx` loads problem via `/api/problems/[slug]`.
+  2. Running sample tests posts user code to `/api/run` (Judge0 with harness built in `lib/judge0.ts`).
+  3. Submitting requires auth; `/api/submit` runs hidden tests (needs `tests` + `paramOrder` in Firestore).
+- **Problem data**:
+  - List: `/api/problems` reads `generated_problems`.
+  - CRUD: `/api/problems/[slug]` on `generated_problems`.
+  - Ingest (legacy/LeetCode fallback): `/api/ingest/problem` writes to `problem`.
 
-## Learn More
+## Adding Problems (Firestore)
+- Minimum fields: `title`, `content` (HTML/MD string), `difficulty`, `starterCode` (per language), `metaData` (JSON string, often includes `params`), `exampleTestcases` (newline‑delimited), optional `paramOrder` (array of param names), optional `tests` (hidden).
+- Create/update via `PUT /api/problems/{slug}` with JSON body; `POST` creates only if missing.
+- Hidden tests shape: `{ n: number; args: Record<string, any>; solutionOutput?: any }[]`
+- Starter code helper types live in `lib/starter-code.ts`.
 
-To learn more about Next.js, take a look at the following resources:
+## API Surface (quick)
+- `GET /api/problems` – list problems (Firestore `generated_problems`).
+- `GET/PUT/PATCH/DELETE /api/problems/{slug}` – CRUD on a single problem.
+- `POST /api/problems/{slug}` – create if not exists (validates title/content).
+- `POST /api/ingest/problem` – upsert into `problem` (legacy path).
+- `POST /api/run` – run sample tests (no auth).
+- `POST /api/submit` – run hidden tests (requires `__session`).
+- `GET /api/languages` – Judge0 languages passthrough.
+- `POST /api/session/login|logout` – session cookie exchange.
+- `POST /api/leetcode/problemset` – GraphQL proxy for LeetCode search (developer aid).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project Layout (select)
+- `app/` – routes; `app/problems/[slug]/page.tsx` is the IDE screen; `app/page.tsx` landing.
+- `app/api/*` – serverless endpoints (problem CRUD, Judge0 proxy, session).
+- `components/ui` – shared UI primitives (shadcn‑style).
+- `lib/` – Firebase client/admin init, Judge0 harness helpers, starter code utilities.
+- `public/` – static assets.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Development Notes
+- Tailwind 4 (postcss plugin) is already configured; styles live mostly in `app/globals.css`.
+- `react-resizable-panels` used for split panes; see `components/ui/resizable.tsx`.
+- The app runs in the browser only (`"use client"` in most screens); server routes handle data fetching.
+- Firestore is required even in dev; mock/stub not provided. Use a secondary Firebase project if needed.
+- Judge0 requests are async; polling handled in `/api/run` and `/api/submit` via GET with `token`.
 
-## Deploy on Vercel
+## Deployment Tips
+- Target Vercel or any Node 18+ host. Ensure env vars are set in the platform.
+- Set `FIREBASE_PRIVATE_KEY` with literal `\n` sequences (Vercel secrets format).
+- If using a custom Judge0 instance, update `RAPIDAPI_BASE_URL`/`HOST` accordingly.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Troubleshooting
+- 401 on submit: missing/expired `__session`; sign in again (Firebase session cookie 5 days).
+- Missing problems in UI: verify documents exist in `generated_problems` and `titleSlug` matches URL.
+- Judge0 errors: check RapidAPI quota and that `RAPIDAPI_*` env vars are present server‑side.
