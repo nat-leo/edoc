@@ -1,0 +1,73 @@
+name: Codex: assignee -> PR
+
+on:
+  issues:
+    types: [assigned]
+
+jobs:
+  codex_issue_to_pr:
+    # Only run when the assignee being added is codex-bot
+    if: ${{ github.event.assignee.login == 'codex-bot' }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Run Codex to implement the issue
+        id: run_codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt: |
+            You are a coding agent operating in this repository.
+
+            Implement GitHub issue #${{ github.event.issue.number }}.
+
+            Title: ${{ github.event.issue.title }}
+
+            Body:
+            ${{ github.event.issue.body }}
+
+            Definition of done:
+            - Make the smallest correct change.
+            - Add/adjust tests if appropriate.
+            - Run the repo's tests/linters if available and fix failures.
+            - Summarize changes for the PR body.
+          sandbox: workspace-write
+
+      - name: Create branch, commit, push
+        run: |
+          set -euxo pipefail
+          BRANCH="codex/issue-${{ github.event.issue.number }}"
+          git checkout -b "$BRANCH"
+
+          # If no changes, exit gracefully (avoids failing the workflow)
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No changes produced; exiting."
+            exit 0
+          fi
+
+          git add -A
+          git config user.name "codex-bot"
+          git config user.email "codex-bot@users.noreply.github.com"
+          git commit -m "Fix #${{ github.event.issue.number }}: ${{ github.event.issue.title }}"
+          git push -u origin "$BRANCH"
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          BRANCH="codex/issue-${{ github.event.issue.number }}"
+          gh pr create \
+            --title "Fix #${{ github.event.issue.number }}: ${{ github.event.issue.title }}" \
+            --body "Automated PR generated from issue #${{ github.event.issue.number }}.\n\n(Assigned to codex-bot)" \
+            --base main \
+            --head "$BRANCH"
