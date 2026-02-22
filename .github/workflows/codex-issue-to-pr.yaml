@@ -7,7 +7,7 @@ on:
 jobs:
   codex_issue_to_pr:
     # Only run when the assignee being added is codex-bot
-    if: ${{ github.event.assignee.login == 'codex-bot' }}
+    if: ${{ github.event.assignee.login == 'nats-codex-bot' }}
     runs-on: ubuntu-latest
 
     permissions:
