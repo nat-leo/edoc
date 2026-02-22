@@ -1,4 +1,4 @@
-name: Codex: assignee -> PR
+name: "Codex: assignee -> PR"
 
 on:
   issues:
