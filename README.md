@@ -27,7 +27,7 @@ RAPIDAPI_HOST=judge0-ce.p.rapidapi.com
 ```
 NOTE: Firebase generates the Private Key, Metadata (Project ID, Client Email, etc) and creates a download called `edoc-blahblahblah-firebase.json`. Copy-paste those lines into the env file. There's a way of just using the json file, but here it's just copypaste for now.
 
-3) Run dev server: `npm run dev` (Node 18+ recommended). Open http://localhost:3000.
+3) Run dev server: `npm run dev` (Node 20.19+ recommended for vitest and vite dependencies). Open http://localhost:3000.
 4) Lint: `npm run lint` (ESLint 9 / Next config).
 
 ## Key Flows
