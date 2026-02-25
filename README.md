@@ -22,9 +22,11 @@ FIREBASE_CLIENT_EMAIL=service-account@xxx.iam.gserviceaccount.com
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
 
 RAPIDAPI_BASE_URL=https://judge0-ce.p.rapidapi.com
-RAPIDAPI_KEY=your_rapidapi_key
+RAPIDAPI_KEY=<YOUR_RAPIDAPI_KEY>
 RAPIDAPI_HOST=judge0-ce.p.rapidapi.com
 ```
+NOTE: Firebase generates the Private Key, Metadata (Project ID, Client Email, etc) and creates a download called edoc-blahblahblah-firebase.json. Copy-paste those lines into the env file. There's a way of just using the json file, but here it's just copypaste for now.
+
 3) Run dev server: `npm run dev` (Node 18+ recommended). Open http://localhost:3000.
 4) Lint: `npm run lint` (ESLint 9 / Next config).
 
