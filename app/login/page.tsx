@@ -230,7 +230,7 @@ export function AuthPage({
               </div>
 
               <TabsContent value="signin" className="mt-0">
-                <form onSubmit={handleSignIn} className="space-y-4">
+                <form onSubmit={handleSignIn} className="space-y-4" noValidate>
                   <div className="space-y-2">
                     <Label htmlFor="emailIn">Email</Label>
                     <Input
@@ -300,7 +300,7 @@ export function AuthPage({
               </TabsContent>
 
               <TabsContent value="signup" className="mt-0">
-                <form onSubmit={handleSignUp} className="space-y-4">
+                <form onSubmit={handleSignUp} className="space-y-4" noValidate>
                   <div className="space-y-2">
                     <Label htmlFor="emailUp">Email</Label>
                     <Input
