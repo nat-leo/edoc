@@ -90,11 +90,13 @@ export function AuthPage({
   onSignUp,
   onOAuth,
 }: AuthPageProps) {
+  const router = useRouter();
   const [mode, setMode] = React.useState<AuthMode>("signin");
 
   const [showPassword, setShowPassword] = React.useState(false);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const pendingRef = React.useRef(false);
 
   // Sign in fields
   const [emailIn, setEmailIn] = React.useState("");
@@ -111,13 +113,22 @@ export function AuthPage({
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   }
 
+  function sanitizeRedirect(to: string | undefined) {
+    if (!to) return "/";
+    if (!to.startsWith("/")) return "/";
+    if (to.startsWith("//")) return "/";
+    return to;
+  }
+
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
+    if (pendingRef.current) return;
     setError(null);
 
     if (!validateEmail(emailIn)) return setError("Please enter a valid email.");
     if (passIn.length < 8) return setError("Password must be at least 8 characters.");
 
+    pendingRef.current = true;
     setPending(true);
     try {
       if (onSignIn) {
@@ -127,22 +138,26 @@ export function AuthPage({
         // await fetch("/api/auth/signin", { method: "POST", body: JSON.stringify({ emailIn, passIn, remember }) })
         console.log("TODO sign-in:", { emailIn, passIn, remember, redirectTo });
       }
-      // TODO: redirect to `redirectTo` (router.push), or rely on server redirect
+      router.push(sanitizeRedirect(redirectTo));
+      router.refresh();
     } catch (err: any) {
       setError(err?.message ?? "Sign in failed. Please try again.");
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   }
 
   async function handleSignUp(e: React.FormEvent) {
     e.preventDefault();
+    if (pendingRef.current) return;
     setError(null);
 
     if (!validateEmail(emailUp)) return setError("Please enter a valid email.");
     if (passUp.length < 8) return setError("Password must be at least 8 characters.");
     if (!agree) return setError("You must accept the Terms to continue.");
 
+    pendingRef.current = true;
     setPending(true);
     try {
       if (onSignUp) {
@@ -151,16 +166,21 @@ export function AuthPage({
         // TODO: Wire to your auth API
         console.log("TODO sign-up:", { emailUp, passUp, redirectTo });
       }
+      router.push(sanitizeRedirect(redirectTo));
+      router.refresh();
       // TODO: handle “verify email” step vs direct sign-in
     } catch (err: any) {
       setError(err?.message ?? "Sign up failed. Please try again.");
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   }
 
   async function handleOAuth(provider: "google" | "github") {
+    if (pendingRef.current) return;
     setError(null);
+    pendingRef.current = true;
     setPending(true);
     try {
       if (onOAuth) {
@@ -169,9 +189,12 @@ export function AuthPage({
         // TODO: Kick off OAuth (often a redirect)
         console.log("TODO oauth:", provider, { redirectTo });
       }
+      router.push(sanitizeRedirect(redirectTo));
+      router.refresh();
     } catch (err: any) {
       setError(err?.message ?? `Could not continue with ${provider}.`);
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   }
