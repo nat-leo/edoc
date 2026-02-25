@@ -65,7 +65,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
-          BRANCH="codex/issue-${{ github.event.issue.number }}"
+          BRANCH="codex/issue-${{ github.event.issue.number }}-${{ github.run_id }}-${{ github.run_attempt }}"
           gh pr create \
             --title "Fix #${{ github.event.issue.number }}: ${{ github.event.issue.title }}" \
             --body "Automated PR generated from issue #${{ github.event.issue.number }}.\n\n(Assigned to codex-bot)" \
