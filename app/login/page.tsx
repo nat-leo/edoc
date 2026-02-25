@@ -53,7 +53,6 @@ type AuthPageProps = {
 };
 
 export function LoginClient() {
-  const router = useRouter();
   const sp = useSearchParams();
   const redirectTo = sp.get("redirectTo") ?? "/";
 
@@ -63,21 +62,15 @@ export function LoginClient() {
       onOAuth={async (provider) => {
         if (provider === "google") {
           await signInWithGoogle();
-          router.push(redirectTo);
-          router.refresh();
           return;
         }
         throw new Error("GitHub not wired yet.");
       }}
       onSignIn={async ({ email, password, remember }) => {
         await signInWithEmailPassword({ email, password, remember });
-        router.push(redirectTo);
-        router.refresh();
       }}
       onSignUp={async ({ email, password }) => {
         await signUpWithEmailPassword({ email, password });
-        router.push(redirectTo);
-        router.refresh();
       }}
     />
   );
@@ -90,11 +83,13 @@ export function AuthPage({
   onSignUp,
   onOAuth,
 }: AuthPageProps) {
+  const router = useRouter();
   const [mode, setMode] = React.useState<AuthMode>("signin");
 
   const [showPassword, setShowPassword] = React.useState(false);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const pendingRef = React.useRef(false);
 
   // Sign in fields
   const [emailIn, setEmailIn] = React.useState("");
@@ -111,13 +106,21 @@ export function AuthPage({
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   }
 
+  function sanitizeRedirect(target?: string) {
+    if (!target) return "/";
+    if (target.startsWith("/") && !target.startsWith("//")) return target;
+    return "/";
+  }
+
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
+    if (pendingRef.current) return;
     if (!validateEmail(emailIn)) return setError("Please enter a valid email.");
     if (passIn.length < 8) return setError("Password must be at least 8 characters.");
 
+    pendingRef.current = true;
     setPending(true);
     try {
       if (onSignIn) {
@@ -127,10 +130,12 @@ export function AuthPage({
         // await fetch("/api/auth/signin", { method: "POST", body: JSON.stringify({ emailIn, passIn, remember }) })
         console.log("TODO sign-in:", { emailIn, passIn, remember, redirectTo });
       }
-      // TODO: redirect to `redirectTo` (router.push), or rely on server redirect
+      router.push(sanitizeRedirect(redirectTo));
+      router.refresh?.();
     } catch (err: any) {
       setError(err?.message ?? "Sign in failed. Please try again.");
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   }
@@ -139,10 +144,12 @@ export function AuthPage({
     e.preventDefault();
     setError(null);
 
+    if (pendingRef.current) return;
     if (!validateEmail(emailUp)) return setError("Please enter a valid email.");
     if (passUp.length < 8) return setError("Password must be at least 8 characters.");
     if (!agree) return setError("You must accept the Terms to continue.");
 
+    pendingRef.current = true;
     setPending(true);
     try {
       if (onSignUp) {
@@ -151,16 +158,20 @@ export function AuthPage({
         // TODO: Wire to your auth API
         console.log("TODO sign-up:", { emailUp, passUp, redirectTo });
       }
-      // TODO: handle “verify email” step vs direct sign-in
+      router.push(sanitizeRedirect(redirectTo));
+      router.refresh?.();
     } catch (err: any) {
       setError(err?.message ?? "Sign up failed. Please try again.");
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   }
 
   async function handleOAuth(provider: "google" | "github") {
     setError(null);
+    if (pendingRef.current) return;
+    pendingRef.current = true;
     setPending(true);
     try {
       if (onOAuth) {
@@ -169,9 +180,12 @@ export function AuthPage({
         // TODO: Kick off OAuth (often a redirect)
         console.log("TODO oauth:", provider, { redirectTo });
       }
+      router.push(sanitizeRedirect(redirectTo));
+      router.refresh?.();
     } catch (err: any) {
       setError(err?.message ?? `Could not continue with ${provider}.`);
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   }
