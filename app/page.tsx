@@ -70,7 +70,7 @@ export default function Home() {
 
       {/* Hero */}
       <main className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-10 px-4 py-14 md:grid-cols-2 md:py-20">
-        <section className="flex flex-col justify-center">
+        <section className="flex flex-col justify-start">
           <h1 className="mt-5 text-4xl font-semibold tracking-tight md:text-5xl">
             Less grind.
             <br />
@@ -126,9 +126,9 @@ export default function Home() {
         </section>
 
         {/* Right column: live problem list */}
-        <section className="flex items-center justify-center">
-          <Card className="w-full max-w-lg border-zinc-200 bg-white shadow-sm dark:border-zinc-900 dark:bg-zinc-950">
-            <div className="p-6">
+        <section className="flex justify-center md:justify-end">
+          <Card className="w-full max-w-lg border-zinc-200 bg-white shadow-sm dark:border-zinc-900 dark:bg-zinc-950 md:max-h-[calc(100vh-8rem)] md:overflow-hidden">
+            <div className="flex h-full flex-col p-6">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold">Fresh practice</div>
                 <Badge variant="outline" className="border-zinc-200 text-zinc-700 dark:border-zinc-900 dark:text-zinc-300">
@@ -136,7 +136,7 @@ export default function Home() {
                 </Badge>
               </div>
 
-              <div className="mt-5 space-y-3">
+              <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-auto pr-1">
                 {loading ? (
                   <p className="text-sm text-zinc-600 dark:text-zinc-300">Loading problems…</p>
                 ) : error ? (
