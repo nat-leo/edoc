@@ -2,7 +2,8 @@
 // POST: create submission -> returns { token }
 // GET : poll by token -> returns normalized Judge0 payload with parsed cases
 
-import { makePythonRunnerHarness, parseNdjson, RunnerCase, RunResponse } from "@/lib/judge0";
+import { makeJavaRunnerHarness, makePythonRunnerHarness, parseNdjson, RunnerCase, RunResponse } from "@/lib/judge0";
+import { HasLoadingBoundary } from "next/dist/shared/lib/app-router-types";
 
 const BASE = process.env.RAPIDAPI_BASE_URL!;
 const KEY = process.env.RAPIDAPI_KEY!;
@@ -100,13 +101,38 @@ export async function POST(req: Request) {
       Array.isArray(cases_struct) && cases_struct.length > 0
         ? cases_struct
         : casesFromExampleTestcases(typeof test_cases === "string" ? test_cases : null, paramOrder);
+    
+    // pick the right test harness based on language_id:
+    /**
+     * Java        === 4
+     * Python 3.13 === 32
+     * Typescript  === 45
+     */
+    let final_source_code= String.raw`...`;
+    console.log("Language ID and Type:", typeof(language_id), language_id)
+    switch (language_id) {
+      case 4:
+        final_source_code = makeJavaRunnerHarness({
+          source_code,
+          metaData: typeof metaData === "string" ? metaData : null,
+          cases,
+          paramOrder,
+        })
+        break; // these breaks exist to stop the other cases from possibly triggering - we're setting, not returnig!
 
-    const final_source_code = makePythonRunnerHarness({
-      source_code,
-      metaData: typeof metaData === "string" ? metaData : null,
-      cases,
-      paramOrder,
-    });
+      case 32:
+        final_source_code = makePythonRunnerHarness({
+          source_code,
+          metaData: typeof metaData === "string" ? metaData : null,
+          cases,
+          paramOrder,
+        });
+        break; // these breaks exist to stop the other cases from possibly triggering - we're setting, not returnig!
+      
+      default:
+        return new Response(JSON.stringify({ error: `Unsupported language_id: ${language_id}` }), { status: 400 });
+    }
+    console.log(final_source_code)
 
     const r = await postToJudge0({
       source_code: final_source_code,
@@ -115,6 +141,8 @@ export async function POST(req: Request) {
     });
 
     const text = await r.text();
+    console.log(text)
+
     return new Response(text, { status: r.status, headers: { "Content-Type": "application/json" } });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message ?? "Unknown error" }), {
@@ -159,6 +187,8 @@ export async function GET(req: Request) {
       memory: payload?.memory ?? null,
       unparsed_lines,
     };
+    
+    console.log(out)
 
     return new Response(JSON.stringify(out), {
       status: r.status,

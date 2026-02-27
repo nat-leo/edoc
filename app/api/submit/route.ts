@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const slug = String(body?.slug ?? "");
     const source_code = String(body?.source_code ?? "");
-    const language_id = Number(body?.language_id ?? 32); // keep consistent with your current usage
+    const language_id = Number(body?.language_id ?? 0); // keep consistent with your current usage
 
     if (!slug) return new Response('{"error":"Missing slug"}', { status: 400 });
     if (!source_code) return new Response('{"error":"Missing source_code"}', { status: 400 });
