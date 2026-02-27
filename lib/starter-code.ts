@@ -67,7 +67,11 @@ function paramsFor(language: Language, params: Param[]): string {
     return params.map((p) => `${p.name}: ${map[p.type]}`).join(", ");
   }
 
-  // java: "Type name"
+  if (language === "java") {
+    return params.map((p) => `${p.name}: ${map[p.type]}`).join(", ");
+  }
+  
+  //
   return params.map((p) => `${map[p.type]} ${p.name}`).join(", ");
 }
 
