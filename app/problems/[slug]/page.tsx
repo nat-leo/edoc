@@ -260,8 +260,8 @@ export default function CodeEditorPage() {
         setProblemData(resolved);
         setCustomTests(resolved.exampleTestcases ?? "");
 
-        const defaultLang = ((resolved.supportedLanguages?.[0]?.slug ??
-          "typescript") as Language);
+        const defaultLang = ((resolved.supportedLanguages?.[1]?.slug ??
+          "python") as Language);
         setLanguage(defaultLang);
 
         console.log("Loaded problem from:", source, resolved);
@@ -284,7 +284,7 @@ export default function CodeEditorPage() {
     };
   }, [slug]);
 
-  const [language, setLanguage] = React.useState<Language>("typescript");
+  const [language, setLanguage] = React.useState<Language>("python");
   const [code, setCode] = React.useState<string>("");
 
   const [customTests, setCustomTests] = React.useState<string>("");
@@ -590,7 +590,7 @@ export default function CodeEditorPage() {
                 <div className="min-h-0 flex-1">
                   <Editor
                     height="100%"
-                    language={language === "typescript" ? "typescript" : language}
+                    language={language === "python" ? "python" : language}
                     value={code}
                     onChange={(v) => setCode(v ?? "")}
                     theme="vs-light"
@@ -733,7 +733,7 @@ export default function CodeEditorPage() {
                                           </span>
                                         </button>
                                         {open ? (
-                                          <pre className="mt-2 whitespace-pre-wrap break-words text-[11px] font-mono text-foreground">
+                                          <pre className="mt-2 max-w-full overflow-x-auto whitespace-pre-wrap break-all text-[11px] font-mono text-foreground">
                                             {JSON.stringify(c, null, 2)}
                                           </pre>
                                         ) : null}
@@ -745,13 +745,13 @@ export default function CodeEditorPage() {
                             ) : null}
 
                             {results?.stdout_raw ? (
-                              <pre className="whitespace-pre-wrap font-mono text-sm text-foreground">
+                              <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-all font-mono text-sm text-foreground">
                                 {results.stdout_raw}
                               </pre>
                             ) : null}
 
                             {results?.stderr_raw ? (
-                              <pre className="whitespace-pre-wrap font-mono text-sm text-destructive">
+                              <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-all font-mono text-sm text-destructive">
                                 {results.stderr_raw}
                               </pre>
                             ) : null}
