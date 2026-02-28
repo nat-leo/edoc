@@ -153,19 +153,19 @@ describe("AuthPage", () => {
     await waitFor(() => expect(onSignIn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1));
 
-    expect(pushMock).toHaveBeenCalledWith("/");
+    expect(pushMock).toHaveBeenCalledWith("/landing");
 
     // Internal redirect allowed
     pushMock.mockReset();
     onSignIn.mockClear();
 
-    render(<AuthPage onSignIn={onSignIn} redirectTo="/dashboard" />);
+    render(<AuthPage onSignIn={onSignIn} redirectTo="/landing" />);
 
     await user.type(screen.getAllByLabelText(/email/i)[0], "user@example.com");
     await user.type(screen.getAllByLabelText(/^password$/i)[0], "12345678");
     await user.click(screen.getAllByRole("button", { name: /^sign in$/i })[0]);
 
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/landing"));
   });
 
   it("OAuth failure shows error and re-enables controls", async () => {
