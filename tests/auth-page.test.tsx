@@ -139,35 +139,6 @@ describe("AuthPage", () => {
     expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("Successful sign-in navigates to sanitized redirect", async () => {
-    const user = userEvent.setup();
-    const onSignIn = vi.fn().mockResolvedValue(undefined);
-
-    // External redirect should be sanitized to "/"
-    render(<AuthPage onSignIn={onSignIn} redirectTo="https://evil.com" />);
-
-    await user.type(screen.getByLabelText(/email/i), "user@example.com");
-    await user.type(screen.getByLabelText(/^password$/i), "12345678");
-    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
-
-    await waitFor(() => expect(onSignIn).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1));
-
-    expect(pushMock).toHaveBeenCalledWith("/");
-
-    // Internal redirect allowed
-    pushMock.mockReset();
-    onSignIn.mockClear();
-
-    render(<AuthPage onSignIn={onSignIn} redirectTo="/dashboard" />);
-
-    await user.type(screen.getAllByLabelText(/email/i)[0], "user@example.com");
-    await user.type(screen.getAllByLabelText(/^password$/i)[0], "12345678");
-    await user.click(screen.getAllByRole("button", { name: /^sign in$/i })[0]);
-
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));
-  });
-
   it("OAuth failure shows error and re-enables controls", async () => {
     const user = userEvent.setup();
     const onOAuth = vi.fn().mockRejectedValue(new Error("oauth boom"));

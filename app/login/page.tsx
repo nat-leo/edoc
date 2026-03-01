@@ -52,6 +52,40 @@ type AuthPageProps = {
   onOAuth?: (provider: "google" | "github") => Promise<void>;
 };
 
+/**
+ * 
+ * @param input is a URL we want to make sure is santized.
+ * @returns Either the input string, or it returns the allowed safe redirect.
+ * 
+ * Without this sanitization, we can accidentally create an OPEN REDIRECT:
+ *    1. App takes a redirectTo value in a URL param.
+ *    2. Attacker creafts a link to your domain that redirects users to a malware/phishing site.
+ *       like `https://yourapp.com/login?redirectTo=https://evil.com`
+ *    3. User signs in and gets redirected to the phishing site. 
+ * This should always be tested to ensure that our site can't be used to assist hackers
+ * in canoodling (verb with negative connotation) our users.
+ */
+export function sanitizeRedirect(input: string | null | undefined, safe_redirect: string | null): string {
+  if (!safe_redirect) safe_redirect = "/landing";
+  if (!input) return safe_redirect;
+
+  const s = input.trim();
+
+  // Must be an absolute *path* on this site
+  if (!s.startsWith("/")) return safe_redirect;
+
+  // Block protocol-relative: //evil.com
+  if (s.startsWith("//")) return safe_redirect;
+
+  // Block backslash variants that some clients normalize oddly
+  if (s.includes("\\")) return safe_redirect;
+
+  // Optional: block newlines / control chars
+  if (/[\u0000-\u001F\u007F]/.test(s)) return safe_redirect;
+
+  return s;
+}
+
 export function LoginClient() {
   const router = useRouter();
   const sp = useSearchParams();
