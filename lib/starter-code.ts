@@ -1,9 +1,9 @@
 // lib/starter-code.ts
 
 export const JUDGE0_LANGUAGE_ID: Record<Language, number> = {
-  typescript: 45, // TypeScript (Node.js) on many Judge0 instances
-  python: 32,     // Python (3.13)
-  java: 4,       // Java
+  typescript: 101, // TypeScript (Node.js) on many Judge0 instances
+  python: 109,     // Python (3.13)
+  java: 91,       // Java
 };
 
 export type CanonType =

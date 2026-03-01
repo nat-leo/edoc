@@ -5,7 +5,8 @@
 import { cookies } from "next/headers";
 
 import { adminAuth } from "@/lib/firebase-admin";
-import { makePythonRunnerHarness, parseNdjson, RunResponse, RunnerCase } from "@/lib/judge0";
+import { makePythonRunnerHarness, makeTypescriptRunnerHarness, parseNdjson, RunResponse, RunnerCase } from "@/lib/judge0";
+import { JUDGE0_LANGUAGE_ID } from "@/lib/starter-code";
 
 const BASE = process.env.RAPIDAPI_BASE_URL!;
 const KEY = process.env.RAPIDAPI_KEY!;
@@ -99,7 +100,12 @@ export async function POST(req: Request) {
       expected: typeof t.solutionOutput === "undefined" ? null : t.solutionOutput,
     }));
 
-    const final_source_code = makePythonRunnerHarness({
+    const makeHarness =
+      Number(language_id) === JUDGE0_LANGUAGE_ID.typescript
+        ? makeTypescriptRunnerHarness
+        : makePythonRunnerHarness;
+
+    const final_source_code = makeHarness({
       source_code,
       metaData: problem.metaData ?? null,
       cases: runnerCases,
@@ -110,7 +116,7 @@ export async function POST(req: Request) {
     const url = new URL(`${BASE}/submissions`);
     url.searchParams.set("base64_encoded", "false");
     url.searchParams.set("wait", "false");
-    url.searchParams.set("fields", "stdout,stderr,status,time,memory");
+    url.searchParams.set("fields", "token,status_id");
 
     const r = await fetch(url.toString(), {
       method: "POST",
@@ -172,7 +178,7 @@ export async function GET(req: Request) {
 
     const url = new URL(`${BASE}/submissions/${token}`);
     url.searchParams.set("base64_encoded", "false");
-    url.searchParams.set("fields", "stdout,stderr,status,time,memory");
+    url.searchParams.set("fields", "stdout,stderr,compile_output,message,status,time,memory");
 
     const r = await fetch(url.toString(), {
       method: "GET",

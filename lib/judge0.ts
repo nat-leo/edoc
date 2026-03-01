@@ -191,6 +191,199 @@ if __name__ == "__main__":
 `;
 }
 
+export function makeTypescriptRunnerHarness(opts: {
+  source_code: string;
+  metaData?: string | null;
+  cases: RunnerCase[];
+  paramOrder?: string[];
+}) {
+  const { source_code, metaData, cases, paramOrder } = opts;
+
+  const METADATA_RAW = JSON.stringify(metaData ?? "null");
+  const CASES_RAW = JSON.stringify(JSON.stringify(cases));
+  const PARAM_ORDER_RAW = JSON.stringify(JSON.stringify(paramOrder ?? []));
+  return String.raw`
+/** USER CODE (verbatim) */
+${source_code}
+
+/** HARNESS (runner) */
+const _now = () => Date.now();
+
+const METADATA_RAW: string | null = ${METADATA_RAW};
+const PARAM_ORDER = ${paramOrder && paramOrder.length ? `JSON.parse(${PARAM_ORDER_RAW})` : "[]"};
+const CASES = JSON.parse(${CASES_RAW});
+
+function _parseMeta(): any {
+  const raw = METADATA_RAW;
+  if (raw == null) return {};
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === "string") {
+      try { return JSON.parse(parsed); } catch { return parsed; }
+    }
+    return parsed ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function _exports(): any {
+  const m = (globalThis as any).module;
+  if (m && m.exports) return m.exports;
+
+  const e = (globalThis as any).exports;
+  if (e) return e;
+
+  return {};
+}
+
+function _inferFuncName(): string {
+  const md = _parseMeta();
+  const name = md && typeof md === "object" ? md.name : undefined;
+  if (name) return String(name);
+
+  const exp = _exports();
+  const publicFns = Object.keys(exp).filter((k) => typeof exp[k] === "function");
+  if (publicFns.length === 1) return publicFns[0];
+
+  throw new Error("Ambiguous Solution functions: " + publicFns.join(", "));
+}
+
+function _tryEval(name: string): any {
+  try {
+    // Direct eval keeps local scope so function declarations are visible.
+    return eval(name);
+  } catch {
+    return (globalThis as any)[name];
+  }
+}
+
+function _getFn(name: string): any {
+  const exp = _exports();
+  if (name && typeof exp[name] === "function") return exp[name];
+  return _tryEval(name);
+}
+
+function _coerce(v: any): any {
+  if (typeof v === "string") {
+    const txt = v.trim();
+    try {
+      return JSON.parse(txt);
+    } catch {
+      return v;
+    }
+  }
+  return v;
+}
+
+function _argsList(argsByName: Record<string, any>): any[] {
+  if (Array.isArray(PARAM_ORDER) && PARAM_ORDER.length) {
+    return PARAM_ORDER.map((name: string) => _coerce(argsByName[name]));
+  }
+  return Object.keys(argsByName)
+    .sort()
+    .map((k) => _coerce(argsByName[k]));
+}
+
+function _jsonable(val: any): any {
+  if (typeof val === "undefined") return null;
+  try {
+    JSON.stringify(val);
+    return val;
+  } catch {
+    return String(val);
+  }
+}
+
+function _deepEqual(a: any, b: any): boolean {
+  // ES5-safe SameValue comparison (replacement for Object.is)
+  const _sameValue = (x: any, y: any): boolean => {
+    if (x === y) return x !== 0 || 1 / x === 1 / y;
+    return x !== x && y !== y;
+  };
+  if (_sameValue(a, b)) return true;
+
+  if (typeof a !== typeof b) return false;
+  if (a && b && typeof a === "object") {
+    const aIsArray = Array.isArray(a);
+    const bIsArray = Array.isArray(b);
+    if (aIsArray !== bIsArray) return false;
+
+    if (aIsArray) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (!_deepEqual(a[i], b[i])) return false;
+      }
+      return true;
+    }
+
+    const aKeys = Object.keys(a).sort();
+    const bKeys = Object.keys(b).sort();
+    if (aKeys.length !== bKeys.length) return false;
+    for (let i = 0; i < aKeys.length; i++) {
+      if (aKeys[i] !== bKeys[i]) return false;
+      const key = aKeys[i];
+      if (!_deepEqual(a[key], b[key])) return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function main() {
+  const funcName = _inferFuncName();
+  const fn = _getFn(funcName);
+  if (typeof fn !== "function") throw new Error("Function not found: " + funcName);
+
+  for (let idx = 0; idx < CASES.length; idx++) {
+    const c = CASES[idx] ?? {};
+    const i = typeof c.i !== "undefined" ? c.i : idx;
+    const argsRaw = c.args ?? {};
+    const argsByName: Record<string, any> = {};
+    for (const k of Object.keys(argsRaw)) argsByName[k] = _coerce(argsRaw[k]);
+    const args = _argsList(argsByName);
+    const expected = c.expected ?? null;
+    const n = c.n;
+
+    try {
+      const t0 = _now();
+      const result = fn(...args);
+      const dtMs = _now() - t0;
+
+      let matches: boolean | null = null;
+      if ("expected" in c && expected !== null) {
+        matches = _deepEqual(result, expected);
+      }
+
+      console.log(JSON.stringify({
+        type: "CASE",
+        i,
+        n,
+        args: argsByName,
+        result: _jsonable(result),
+        expected: _jsonable(expected),
+        matches,
+        runtime_ms: dtMs,
+      }));
+    } catch (e) {
+      const err = e as any;
+      console.log(JSON.stringify({
+        type: "CASE",
+        i,
+        n,
+        args: argsByName,
+        error: err?.toString?.() ?? String(err),
+        trace: err?.stack ?? "",
+      }));
+    }
+  }
+}
+
+main();` 
+}
+
 export function makeJavaRunnerHarness(opts: {
   source_code: string;
   metaData?: string | null;
@@ -202,7 +395,6 @@ export function makeJavaRunnerHarness(opts: {
   const METADATA_RAW = JSON.stringify(metaData ?? "null");
   const CASES_RAW = JSON.stringify(JSON.stringify(cases));
   const PARAM_ORDER_RAW = JSON.stringify(JSON.stringify(paramOrder ?? []));
-
   return String.raw`
 import java.io.PrintWriter;
 import java.io.StringWriter;
