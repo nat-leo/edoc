@@ -202,28 +202,25 @@ export function makeTypescriptRunnerHarness(opts: {
   const METADATA_RAW = JSON.stringify(metaData ?? "null");
   const CASES_RAW = JSON.stringify(JSON.stringify(cases));
   const PARAM_ORDER_RAW = JSON.stringify(JSON.stringify(paramOrder ?? []));
-  return `
-  
+  return String.raw`
 /** USER CODE (verbatim) */
 ${source_code}
 
 /** HARNESS (runner) */
-import { performance } from "perf_hooks";
+const _now = () => Date.now();
 
-const METADATA_RAW = ${METADATA_RAW};
+const METADATA_RAW: string | null = ${METADATA_RAW};
 const PARAM_ORDER = ${paramOrder && paramOrder.length ? `JSON.parse(${PARAM_ORDER_RAW})` : "[]"};
 const CASES = JSON.parse(${CASES_RAW});
 
 function _parseMeta(): any {
-  if (METADATA_RAW === null || METADATA_RAW === "null") return {};
+  const raw = METADATA_RAW;
+  if (raw == null) return {};
+
   try {
-    const parsed = JSON.parse(METADATA_RAW);
+    const parsed = JSON.parse(raw);
     if (typeof parsed === "string") {
-      try {
-        return JSON.parse(parsed);
-      } catch {
-        return parsed;
-      }
+      try { return JSON.parse(parsed); } catch { return parsed; }
     }
     return parsed ?? {};
   } catch {
@@ -232,8 +229,12 @@ function _parseMeta(): any {
 }
 
 function _exports(): any {
-  if (typeof module !== "undefined" && module.exports) return module.exports;
-  if (typeof exports !== "undefined") return exports;
+  const m = (globalThis as any).module;
+  if (m && m.exports) return m.exports;
+
+  const e = (globalThis as any).exports;
+  if (e) return e;
+
   return {};
 }
 
@@ -296,7 +297,12 @@ function _jsonable(val: any): any {
 }
 
 function _deepEqual(a: any, b: any): boolean {
-  if (Object.is(a, b)) return true;
+  // ES5-safe SameValue comparison (replacement for Object.is)
+  const _sameValue = (x: any, y: any): boolean => {
+    if (x === y) return x !== 0 || 1 / x === 1 / y;
+    return x !== x && y !== y;
+  };
+  if (_sameValue(a, b)) return true;
 
   if (typeof a !== typeof b) return false;
   if (a && b && typeof a === "object") {
@@ -326,7 +332,7 @@ function _deepEqual(a: any, b: any): boolean {
   return false;
 }
 
-async function main() {
+function main() {
   const funcName = _inferFuncName();
   const fn = _getFn(funcName);
   if (typeof fn !== "function") throw new Error("Function not found: " + funcName);
@@ -342,48 +348,42 @@ async function main() {
     const n = c.n;
 
     try {
-      const mem0 = process.memoryUsage().heapUsed;
-      const t0 = performance.now();
-      const result = await fn(...args);
-      const dtMs = performance.now() - t0;
-      const mem1 = process.memoryUsage().heapUsed;
-      const peak = Math.max(mem0, mem1);
+      const t0 = _now();
+      const result = fn(...args);
+      const dtMs = _now() - t0;
 
       let matches: boolean | null = null;
       if ("expected" in c && expected !== null) {
         matches = _deepEqual(result, expected);
       }
 
-      console.log(
-        JSON.stringify({
-          type: "CASE",
-          i,
-          n,
-          args: argsByName,
-          result: _jsonable(result),
-          expected: _jsonable(expected),
-          matches,
-          runtime_ms: dtMs,
-          mb: peak,
-        })
-      );
-    } catch (e: any) {
-      console.log(
-        JSON.stringify({
-          type: "CASE",
-          i,
-          n,
-          args: argsByName,
-          error: e?.toString?.() ?? String(e),
-          trace: e?.stack ?? "",
-        })
-      );
+      console.log(JSON.stringify({
+        type: "CASE",
+        i,
+        n,
+        args: argsByName,
+        result: _jsonable(result),
+        expected: _jsonable(expected),
+        matches,
+        runtime_ms: dtMs,
+      }));
+    } catch (e) {
+      const err = e as any;
+      console.log(JSON.stringify({
+        type: "CASE",
+        i,
+        n,
+        args: argsByName,
+        error: err?.toString?.() ?? String(err),
+        trace: err?.stack ?? "",
+      }));
     }
   }
 }
 
 main();` 
- 
+}
+
 export function makeJavaRunnerHarness(opts: {
   source_code: string;
   metaData?: string | null;
