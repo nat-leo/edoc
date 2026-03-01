@@ -116,7 +116,7 @@ export async function POST(req: Request) {
     const url = new URL(`${BASE}/submissions`);
     url.searchParams.set("base64_encoded", "false");
     url.searchParams.set("wait", "false");
-    url.searchParams.set("fields", "stdout,stderr,status,time,memory");
+    url.searchParams.set("fields", "token,status_id");
 
     const r = await fetch(url.toString(), {
       method: "POST",
@@ -178,7 +178,7 @@ export async function GET(req: Request) {
 
     const url = new URL(`${BASE}/submissions/${token}`);
     url.searchParams.set("base64_encoded", "false");
-    url.searchParams.set("fields", "stdout,stderr,status,time,memory");
+    url.searchParams.set("fields", "stdout,stderr,compile_output,message,status,time,memory");
 
     const r = await fetch(url.toString(), {
       method: "GET",
