@@ -2,8 +2,7 @@
 // POST: create submission -> returns { token }
 // GET : poll by token -> returns normalized Judge0 payload with parsed cases
 
-import { makeJavaRunnerHarness, makePythonRunnerHarness, parseNdjson, RunnerCase, RunResponse } from "@/lib/judge0";
-import { HasLoadingBoundary } from "next/dist/shared/lib/app-router-types";
+import { makeJavaRunnerHarness, makeTypescriptRunnerHarness, makePythonRunnerHarness, parseNdjson, RunnerCase, RunResponse } from "@/lib/judge0";
 
 const BASE = process.env.RAPIDAPI_BASE_URL!;
 const KEY = process.env.RAPIDAPI_KEY!;
@@ -55,7 +54,7 @@ async function postToJudge0(payload: any) {
   const url = new URL(`${BASE}/submissions`);
   url.searchParams.set("base64_encoded", "false");
   url.searchParams.set("wait", "false");
-  url.searchParams.set("fields", "stdout,stderr,status,time,memory");
+  url.searchParams.set("fields", "token,status_id");
 
   const r = await fetch(url.toString(), {
     method: "POST",
@@ -73,7 +72,7 @@ async function postToJudge0(payload: any) {
 async function pollFromJudge0(token: string) {
   const url = new URL(`${BASE}/submissions/${token}`);
   url.searchParams.set("base64_encoded", "false");
-  url.searchParams.set("fields", "stdout,stderr,status,time,memory");
+  url.searchParams.set("fields", "stdout,stderr,compile_output,message,status,time,memory");
 
   const r = await fetch(url.toString(), {
     method: "GET",
@@ -93,6 +92,7 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
     const { source_code, language_id, metaData, test_cases, cases_struct } = body;
+    const langId = Number(language_id);
 
     if (!source_code) return new Response('{"error":"Missing source_code"}', { status: 400 });
 
@@ -105,13 +105,13 @@ export async function POST(req: Request) {
     // pick the right test harness based on language_id:
     /**
      * Java        === 4
-     * Python 3.13 === 32
+     * Python 3.13 === 109
      * Typescript  === 45
      */
     let final_source_code= String.raw`...`;
-    console.log("Language ID and Type:", typeof(language_id), language_id)
-    switch (language_id) {
-      case 4:
+    console.log("Language ID and Type:", typeof language_id, language_id);
+    switch (langId) {
+      case 91:
         final_source_code = makeJavaRunnerHarness({
           source_code,
           metaData: typeof metaData === "string" ? metaData : null,
@@ -120,7 +120,16 @@ export async function POST(req: Request) {
         })
         break; // these breaks exist to stop the other cases from possibly triggering - we're setting, not returnig!
 
-      case 32:
+      case 101:
+        final_source_code = makeTypescriptRunnerHarness({
+          source_code,
+          metaData: typeof metaData === "string" ? metaData : null,
+          cases,
+          paramOrder,
+        })
+        break; // these breaks exist to stop the other cases from possibly triggering - we're setting, not returnig!
+
+      case 109:
         final_source_code = makePythonRunnerHarness({
           source_code,
           metaData: typeof metaData === "string" ? metaData : null,
@@ -136,7 +145,7 @@ export async function POST(req: Request) {
 
     const r = await postToJudge0({
       source_code: final_source_code,
-      language_id: Number(language_id ?? 32),
+      language_id: Number.isFinite(langId) ? langId : 32,
       stdin: "",
     });
 
