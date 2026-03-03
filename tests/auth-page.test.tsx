@@ -46,7 +46,7 @@ vi.mock("next/link", () => {
 
 // Adjust this import path if your tests run from a different cwd.
 // With vitest at repo root, this relative path is typically correct:
-import { AuthPage } from "@/app/login/page";
+import { LoginForm, sanitizeRedirect } from "@/app/login/page";
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -62,12 +62,12 @@ beforeEach(() => {
   pushMock.mockReset();
 });
 
-describe("AuthPage", () => {
+describe("LoginForm", () => {
   it("Invalid email blocks submit + no auth call", async () => {
     const user = userEvent.setup();
     const onSignIn = vi.fn().mockResolvedValue(undefined);
 
-    render(<AuthPage onSignIn={onSignIn} redirectTo="/dashboard" />);
+    render(<LoginForm onSignIn={onSignIn} redirectTo="/dashboard" />);
 
     await user.type(screen.getByLabelText(/email/i), "bad");
     await user.type(screen.getByLabelText(/^password$/i), "12345678");
@@ -82,7 +82,7 @@ describe("AuthPage", () => {
     const user = userEvent.setup();
     const onSignIn = vi.fn().mockResolvedValue(undefined);
 
-    render(<AuthPage onSignIn={onSignIn} redirectTo="/dashboard" />);
+    render(<LoginForm onSignIn={onSignIn} redirectTo="/dashboard" />);
 
     await user.type(screen.getByLabelText(/email/i), "user@example.com");
     await user.type(screen.getByLabelText(/^password$/i), "123"); // too short
@@ -100,7 +100,7 @@ describe("AuthPage", () => {
     const d = deferred<void>();
     const onSignIn = vi.fn().mockImplementation(() => d.promise);
 
-    render(<AuthPage onSignIn={onSignIn} redirectTo="/dashboard" />);
+    render(<LoginForm onSignIn={onSignIn} redirectTo="/dashboard" />);
 
     await user.type(screen.getByLabelText(/email/i), "user@example.com");
     await user.type(screen.getByLabelText(/^password$/i), "12345678");
@@ -126,7 +126,7 @@ describe("AuthPage", () => {
     const user = userEvent.setup();
     const onSignIn = vi.fn().mockRejectedValue(new Error("boom"));
 
-    render(<AuthPage onSignIn={onSignIn} redirectTo="/dashboard" />);
+    render(<LoginForm onSignIn={onSignIn} redirectTo="/dashboard" />);
 
     await user.type(screen.getByLabelText(/email/i), "user@example.com");
     await user.type(screen.getByLabelText(/^password$/i), "12345678");
@@ -143,7 +143,7 @@ describe("AuthPage", () => {
     const user = userEvent.setup();
     const onOAuth = vi.fn().mockRejectedValue(new Error("oauth boom"));
 
-    render(<AuthPage onOAuth={onOAuth} redirectTo="/dashboard" />);
+    render(<LoginForm onOAuth={onOAuth} redirectTo="/dashboard" />);
 
     const google = screen.getByRole("button", { name: /^google$/i });
     expect(google).toBeEnabled();
@@ -152,5 +152,25 @@ describe("AuthPage", () => {
 
     expect(await screen.findByText("oauth boom")).toBeInTheDocument();
     await waitFor(() => expect(google).toBeEnabled());
+  });
+});
+
+describe("sanitizeRedirect", () => {
+  it("keeps safe absolute paths", () => {
+    expect(sanitizeRedirect("/dashboard", "/")).toBe("/dashboard");
+    expect(sanitizeRedirect("/problems/1?tab=code", "/")).toBe("/problems/1?tab=code");
+  });
+
+  it("falls back for unsafe redirects", () => {
+    expect(sanitizeRedirect("https://evil.com", "/")).toBe("/");
+    expect(sanitizeRedirect("//evil.com", "/")).toBe("/");
+    expect(sanitizeRedirect("/\\evil", "/")).toBe("/");
+    expect(sanitizeRedirect("/safe\nbad", "/")).toBe("/");
+  });
+
+  it("uses fallback when redirect is empty", () => {
+    expect(sanitizeRedirect("", "/")).toBe("/");
+    expect(sanitizeRedirect(undefined, "/")).toBe("/");
+    expect(sanitizeRedirect(undefined, null)).toBe("/landing");
   });
 });

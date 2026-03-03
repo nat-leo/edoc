@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense } from "react"
+import { Suspense } from "react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ import {
 
 type AuthMode = "signin" | "signup";
 
-type AuthPageProps = {
+type LoginFormProps = {
   className?: string;
 
   /**
@@ -65,34 +65,34 @@ type AuthPageProps = {
  * This should always be tested to ensure that our site can't be used to assist hackers
  * in canoodling (verb with negative connotation) our users.
  */
-export function sanitizeRedirect(input: string | null | undefined, safe_redirect: string | null): string {
-  if (!safe_redirect) safe_redirect = "/landing";
-  if (!input) return safe_redirect;
+export function sanitizeRedirect(input: string | null | undefined, safeRedirect: string | null): string {
+  if (!safeRedirect) safeRedirect = "/landing";
+  if (!input) return safeRedirect;
 
   const s = input.trim();
 
   // Must be an absolute *path* on this site
-  if (!s.startsWith("/")) return safe_redirect;
+  if (!s.startsWith("/")) return safeRedirect;
 
   // Block protocol-relative: //evil.com
-  if (s.startsWith("//")) return safe_redirect;
+  if (s.startsWith("//")) return safeRedirect;
 
   // Block backslash variants that some clients normalize oddly
-  if (s.includes("\\")) return safe_redirect;
+  if (s.includes("\\")) return safeRedirect;
 
   // Optional: block newlines / control chars
-  if (/[\u0000-\u001F\u007F]/.test(s)) return safe_redirect;
+  if (/[\u0000-\u001F\u007F]/.test(s)) return safeRedirect;
 
   return s;
 }
 
-export function LoginClient() {
+export function LoginPageContent() {
   const router = useRouter();
   const sp = useSearchParams();
-  const redirectTo = sp.get("redirectTo") ?? "/";
+  const redirectTo = sanitizeRedirect(sp.get("redirectTo"), "/");
 
   return (
-    <AuthPage
+    <LoginForm
       redirectTo={redirectTo}
       onOAuth={async (provider) => {
         if (provider === "google") {
@@ -117,13 +117,13 @@ export function LoginClient() {
   );
 }
 
-export function AuthPage({
+export function LoginForm({
   className,
   redirectTo = "/",
   onSignIn,
   onSignUp,
   onOAuth,
-}: AuthPageProps) {
+}: LoginFormProps) {
   const [mode, setMode] = React.useState<AuthMode>("signin");
 
   const [showPassword, setShowPassword] = React.useState(false);
@@ -412,10 +412,10 @@ export function AuthPage({
   );
 }
 
-export default function Page() {
+export default function LoginPage() {
   return (
     <Suspense fallback={<div className="p-6">Loading…</div>}>
-      <LoginClient />
+      <LoginPageContent />
     </Suspense>
-  )
+  );
 }
