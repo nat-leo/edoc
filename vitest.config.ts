@@ -10,7 +10,9 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
-      reportsDirectory: "./coverage"
+      reportsDirectory: "./coverage",
+      include: ["app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", "lib/**/*.ts"],
+      exclude: ["**/*.d.ts", "**/.next/**", "**/node_modules/**"],
     }
   },
 });
