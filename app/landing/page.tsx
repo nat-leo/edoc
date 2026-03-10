@@ -1,38 +1,62 @@
-import Link from "next/link"
+"use client";
 
-import { Button } from "@/components/ui/button"
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import type { User } from "firebase/auth";
+
+import { LoginForm } from "@/app/login/page";
+import {
+  onAuthStateChanged,
+  signInWithEmailPassword,
+  signInWithGoogle,
+  signUpWithEmailPassword,
+} from "@/lib/auth";
 
 export default function LandingPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<User | null | undefined>(undefined);
+
+  useEffect(() => {
+    return onAuthStateChanged(setUser);
+  }, []);
+
+  if (user === undefined) {
+    return (
+      <main className="min-h-screen grid place-items-center p-6">
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <LoginForm
+        redirectTo="/landing"
+        onOAuth={async (provider) => {
+          if (provider !== "google") throw new Error("GitHub not wired yet.");
+          await signInWithGoogle();
+          router.push("/landing");
+          router.refresh();
+        }}
+        onSignIn={async ({ email, password, remember }) => {
+          await signInWithEmailPassword({ email, password, remember });
+          router.push("/landing");
+          router.refresh();
+        }}
+        onSignUp={async ({ email, password }) => {
+          await signUpWithEmailPassword({ email, password });
+          router.push("/landing");
+          router.refresh();
+        }}
+      />
+    );
+  }
+
+  const name = user.displayName?.trim() || user.email?.trim() || "User";
+
   return (
-    <main className="min-h-screen grid grid-rows-[1fr_auto_1fr] p-6 px-6 sm:px-20 lg:px-16 ">
-      {/* (top spacer) */}
-        <div className="text-center">
-          <h1 className="text-xl">edoc.ai</h1>
-        </div>
-
-        {/* perfectly centered text */}
-        <div className="text-center">
-          <h1 className="text-3xl font-semibold">Let's get started.</h1>
-          <div className="text-muted-foreground">
-            <p>Testing yourself is the best way to discover gaps in your knowledge. If you fail, and I should really be saying when you fail, you'll be in a state of mind that makes corrections stick.<br/><br/>Be an Active Learner. You got this!</p>
-          </div>
-        </div>
-
-        {/* content halfway between center-text and bottom */}
-        <div className="grid place-items-center">
-          <div className="w-full max-w-md flex justify-center gap-20">
-            <Button variant="ghost">
-              <Link href="/learn">
-                Learn
-              </Link>
-            </Button>
-            <Button>
-              <Link href="/test">
-                Test me
-              </Link>
-            </Button>
-          </div>
-        </div>
+    <main className="min-h-screen grid place-items-center p-6">
+      <h1 className="text-3xl font-semibold">Hello, {name}</h1>
     </main>
   );
 }
