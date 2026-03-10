@@ -444,7 +444,11 @@ export default function CodeEditorPage() {
       let poll: RunResponse | null = null;
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 500));
-        const pollRes = await fetch(`/${mode === "run" ? "api/run" : "api/submit"}?token=${encodeURIComponent(token)}`);
+        const pollParams = new URLSearchParams({ token });
+        if (!isRun && slug) pollParams.set("slug", slug);
+        const pollRes = await fetch(
+          `/${mode === "run" ? "api/run" : "api/submit"}?${pollParams.toString()}`
+        );
         poll = await pollRes.json().catch(() => null);
         if (!pollRes.ok) {
           if (!isRun && pollRes.status === 401) {

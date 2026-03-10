@@ -43,6 +43,17 @@ function assertEnv() {
   }
 }
 
+function slugFromReferer(referer: string | null) {
+  if (!referer) return null;
+  try {
+    const path = new URL(referer).pathname;
+    const match = path.match(/^\/problems\/([^/]+)$/);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     assertEnv();
@@ -173,7 +184,23 @@ export async function GET(req: Request) {
     const user = await requireAuth();
     if (!user) return unauthorized();
 
-    const token = new URL(req.url).searchParams.get("token");
+    const requestUrl = new URL(req.url);
+    const token = requestUrl.searchParams.get("token");
+    const referer = req.headers.get("referer");
+    const slugFromQuery = requestUrl.searchParams.get("slug");
+    const slug = slugFromQuery?.trim() || slugFromReferer(referer);
+
+    console.info("[/api/submit][GET] Incoming request", {
+      method: req.method,
+      path: requestUrl.pathname,
+      token,
+      slug,
+      userId: user.uid ?? null,
+      userAgent: req.headers.get("user-agent"),
+      forwardedFor: req.headers.get("x-forwarded-for"),
+      referer,
+    });
+
     if (!token) return new Response('{"error":"Missing token"}', { status: 400 });
 
     const url = new URL(`${BASE}/submissions/${token}`);
@@ -216,6 +243,21 @@ export async function GET(req: Request) {
       memory: payload?.memory ?? null,
       unparsed_lines,
     };
+
+    console.info("[/api/submit][GET] Judge0 response", {
+      token,
+      slug,
+      userId: user.uid ?? null,
+      judge0HttpStatus: r.status,
+      judge0Status: payload?.status ?? null,
+      time: payload?.time ?? null,
+      memory: payload?.memory ?? null,
+      caseCount: Array.isArray(cases) ? cases.length : 0,
+      unparsedLineCount: Array.isArray(unparsed_lines) ? unparsed_lines.length : 0,
+      hasCompileOutput: Boolean(payload?.compile_output),
+      stderrPreview: stderr_raw.slice(0, 300),
+      stdoutPreview: stdout_raw.slice(0, 300),
+    });
 
     return new Response(JSON.stringify(out), {
       status: r.status,
