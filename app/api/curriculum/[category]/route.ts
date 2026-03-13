@@ -157,16 +157,19 @@ export async function GET(
       return NextResponse.json({ error: "Invalid category" }, { status: 400 });
     }
 
-    const ref = adminDb.collection(collection).doc(slugValue);
-    const snap = await ref.get();
-    if (!snap.exists) {
-      return NextResponse.json({ error: "Problem not found" }, { status: 404 });
-    }
+    const snap = await adminDb.collection(collection).get();
+    const items = snap.docs.map((doc) => buildProblemEntry(doc.data(), doc.id));
 
-    const out = buildProblemEntry(snap.data(), slugValue);
-    return NextResponse.json({ problem: out });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message ?? "Unknown error" }, { status: 500 });
+    return NextResponse.json({
+      category: slugValue,
+      collection,
+      items,
+    });
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ error: "Unknown error" }, { status: 500 });
   }
 }
 
