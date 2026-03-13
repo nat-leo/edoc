@@ -55,6 +55,26 @@ type ProblemEntry = {
   updatedAt?: string;
 };
 
+async function listSearchCollections() {
+  const collections = await adminDb.listCollections();
+  const dynamic = collections
+    .map((collection) => collection.id)
+    .filter(
+      (collectionId) =>
+        collectionId.endsWith("-curriculum") || collectionId.endsWith("-collection")
+    );
+
+  if (dynamic.length === 0) {
+    return [COLLECTION];
+  }
+
+  if (!dynamic.includes(COLLECTION)) {
+    dynamic.push(COLLECTION);
+  }
+
+  return dynamic;
+}
+
 function normalizeSlug(value?: string | null) {
   const slug = value?.trim();
   return slug && slug.length > 0 ? slug : null;
@@ -139,14 +159,21 @@ export async function GET(
       return NextResponse.json({ error: "Missing slug" }, { status: 400 });
     }
 
-    const ref = adminDb.collection(COLLECTION).doc(slugValue);
-    const snap = await ref.get();
-    if (!snap.exists) {
+    const collectionIds = await listSearchCollections();
+    const matches = await Promise.all(
+      collectionIds.map(async (collectionId) => {
+        const snap = await adminDb.collection(collectionId).doc(slugValue).get();
+        return { collectionId, snap };
+      })
+    );
+
+    const match = matches.find((entry) => entry.snap.exists);
+    if (!match) {
       return NextResponse.json({ error: "Problem not found" }, { status: 404 });
     }
 
-    const out = buildProblemEntry(snap.data(), slugValue);
-    return NextResponse.json({ problem: out });
+    const out = buildProblemEntry(match.snap.data(), slugValue);
+    return NextResponse.json({ problem: out, collection: match.collectionId });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message ?? "Unknown error" }, { status: 500 });
   }
