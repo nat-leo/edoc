@@ -440,11 +440,13 @@ export default function CodeEditorPage() {
 
       const token = submit?.token as string | undefined;
       if (!token) throw new Error("No token returned from API");
+      const submissionId = !isRun ? (submit?.submissionId as string | undefined) : undefined;
 
       let poll: RunResponse | null = null;
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 500));
         const pollParams = new URLSearchParams({ token });
+        if (!isRun && submissionId) pollParams.set("submissionId", submissionId);
         if (!isRun && slug) pollParams.set("slug", slug);
         const pollRes = await fetch(
           `/${mode === "run" ? "api/run" : "api/submit"}?${pollParams.toString()}`

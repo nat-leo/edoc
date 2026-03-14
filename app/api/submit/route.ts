@@ -4,9 +4,17 @@
 
 import { cookies } from "next/headers";
 
-import { adminAuth } from "@/lib/firebase-admin";
+import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { makePythonRunnerHarness, makeTypescriptRunnerHarness, parseNdjson, RunResponse, RunnerCase } from "@/lib/judge0";
 import { JUDGE0_LANGUAGE_ID } from "@/lib/starter-code";
+import {
+  buildSubmissionRecord,
+  isTerminalSubmissionStatus,
+  mapJudge0StatusToSubmissionStatus,
+  SUBMISSIONS_COLLECTION,
+  SubmissionRecord,
+  SubmissionStatus,
+} from "@/lib/submissions";
 
 const BASE = process.env.RAPIDAPI_BASE_URL!;
 const KEY = process.env.RAPIDAPI_KEY!;
@@ -33,8 +41,14 @@ async function requireAuth() {
 
 type HiddenTest = {
   n: number;
-  args: Record<string, any>;
+  args: Record<string, unknown>;
   solutionOutput?: unknown;
+};
+
+type Judge0Payload = Record<string, unknown>;
+type ProblemApiPayload = {
+  problem?: Record<string, unknown>;
+  [key: string]: unknown;
 };
 
 function assertEnv() {
@@ -51,6 +65,121 @@ function slugFromReferer(referer: string | null) {
     return match?.[1] ?? null;
   } catch {
     return null;
+  }
+}
+
+function normalizeSubmissionId(value: string | null) {
+  const id = value?.trim();
+  return id && id.length > 0 ? id : null;
+}
+
+function parseJudge0Payload(text: string): Judge0Payload {
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Judge0Payload;
+    }
+    return { value: parsed };
+  } catch {
+    return { raw: text };
+  }
+}
+
+function readNullableString(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (value === null || typeof value === "undefined") return null;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
+}
+
+function firstNonEmpty(values: Array<string | null>): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+  }
+  return "";
+}
+
+function messageFromError(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+function readJudge0Status(input: unknown): { id?: number; description?: string } {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return {};
+  }
+
+  const status = input as Record<string, unknown>;
+  return {
+    id: typeof status.id === "number" ? status.id : undefined,
+    description: typeof status.description === "string" ? status.description : undefined,
+  };
+}
+
+async function resolveSubmissionRefForUser(input: {
+  submissionId: string | null;
+  judge0Token: string;
+  userId: string;
+}) {
+  if (input.submissionId) {
+    const ref = adminDb.collection(SUBMISSIONS_COLLECTION).doc(input.submissionId);
+    const snap = await ref.get();
+    if (!snap.exists) return null;
+
+    const data = snap.data() as Partial<SubmissionRecord> | undefined;
+    if (!data || data.userId !== input.userId || data.judge0Token !== input.judge0Token) {
+      return null;
+    }
+    return ref;
+  }
+
+  const snap = await adminDb
+    .collection(SUBMISSIONS_COLLECTION)
+    .where("judge0Token", "==", input.judge0Token)
+    .limit(5)
+    .get();
+
+  const match = snap.docs.find((doc) => {
+    const data = doc.data() as Partial<SubmissionRecord> | undefined;
+    return data?.userId === input.userId;
+  });
+
+  return match?.ref ?? null;
+}
+
+async function persistSubmissionUpdate(input: {
+  submissionId: string | null;
+  judge0Token: string;
+  userId: string;
+  status: SubmissionStatus;
+  judge0Payload: Judge0Payload;
+}) {
+  try {
+    const ref = await resolveSubmissionRefForUser({
+      submissionId: input.submissionId,
+      judge0Token: input.judge0Token,
+      userId: input.userId,
+    });
+    if (!ref) return;
+
+    const payload: Partial<SubmissionRecord> = {
+      status: input.status,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (isTerminalSubmissionStatus(input.status)) {
+      payload.judge0Response = input.judge0Payload;
+    }
+
+    await ref.set(payload, { merge: true });
+  } catch (error) {
+    console.error("[/api/submit] Failed to persist submission update", {
+      submissionId: input.submissionId,
+      judge0Token: input.judge0Token,
+      userId: input.userId,
+      error,
+    });
   }
 }
 
@@ -71,7 +200,7 @@ export async function POST(req: Request) {
 
     const origin = new URL(req.url).origin;
     const problemRes = await fetch(`${origin}/api/problems/${slug}`, { cache: "no-store" });
-    const problemPayload = await problemRes.json().catch(() => ({} as any));
+    const problemPayload = (await problemRes.json().catch(() => ({}))) as ProblemApiPayload;
 
     if (!problemRes.ok) {
       return new Response(JSON.stringify(problemPayload), {
@@ -147,16 +276,38 @@ export async function POST(req: Request) {
     const text = await r.text();
     if (!r.ok) return new Response(text, { status: r.status });
 
-    // Judge0 returns JSON; we’ll merge in meta safely without assuming shape
-    let payload: any;
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      payload = { raw: text };
+    const payload = parseJudge0Payload(text);
+    const judge0Token = typeof payload.token === "string" ? payload.token : "";
+    if (!judge0Token) {
+      return new Response('{"error":"Judge0 did not return a token"}', {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      });
     }
+
+    const initialStatus =
+      typeof payload.status_id === "number"
+        ? mapJudge0StatusToSubmissionStatus({ id: payload.status_id })
+        : "queued";
+
+    const submissionRef = adminDb.collection(SUBMISSIONS_COLLECTION).doc();
+    const submissionRecord = buildSubmissionRecord({
+      id: submissionRef.id,
+      judge0Token,
+      userId: user.uid,
+      problemId: slug,
+      languageId: language_id,
+      code: source_code,
+      status: initialStatus,
+    });
+    await submissionRef.set(submissionRecord, { merge: false });
 
     const out = {
       ...payload,
+      id: submissionRef.id,
+      submissionId: submissionRef.id,
+      judge0Token,
+      submissionStatus: submissionRecord.status,
       meta: {
         slug,
         testCount: tests.length,
@@ -169,8 +320,8 @@ export async function POST(req: Request) {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: e?.message ?? "Unknown error" }), {
+  } catch (e: unknown) {
+    return new Response(JSON.stringify({ error: messageFromError(e) }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
@@ -186,6 +337,7 @@ export async function GET(req: Request) {
 
     const requestUrl = new URL(req.url);
     const token = requestUrl.searchParams.get("token");
+    const submissionId = normalizeSubmissionId(requestUrl.searchParams.get("submissionId"));
     const referer = req.headers.get("referer");
     const slugFromQuery = requestUrl.searchParams.get("slug");
     const slug = slugFromQuery?.trim() || slugFromReferer(referer);
@@ -194,6 +346,7 @@ export async function GET(req: Request) {
       method: req.method,
       path: requestUrl.pathname,
       token,
+      submissionId,
       slug,
       userId: user.uid ?? null,
       userAgent: req.headers.get("user-agent"),
@@ -218,29 +371,39 @@ export async function GET(req: Request) {
 
     const text = await r.text();
 
-    let payload: any;
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      payload = { raw: text };
-    }
+    const payload = parseJudge0Payload(text);
+    const judge0Status = readJudge0Status(payload.status);
+    const submissionStatus = mapJudge0StatusToSubmissionStatus(judge0Status);
+    await persistSubmissionUpdate({
+      submissionId,
+      judge0Token: token,
+      userId: user.uid,
+      status: submissionStatus,
+      judge0Payload: payload,
+    });
 
-    const stdout_raw = String(payload?.stdout ?? "");
-    const stderr_raw = String(
-      payload?.stderr ?? payload?.compile_output ?? payload?.message ?? ""
-    );
+    const stdout_raw = readNullableString(payload.stdout) ?? "";
+    const compileOutput = readNullableString(payload.compile_output);
+    const stderr_raw = firstNonEmpty([
+      readNullableString(payload.stderr),
+      compileOutput,
+      readNullableString(payload.message),
+    ]);
 
     const { cases, unparsed_lines } = parseNdjson(stdout_raw);
+    const status = typeof judge0Status.id === "number"
+      ? { id: judge0Status.id, description: judge0Status.description }
+      : undefined;
 
     const out: RunResponse = {
       token,
-      status: payload?.status,
+      status,
       stdout_raw,
       stderr_raw,
       cases,
-      compile_output: payload?.compile_output ?? null,
-      time: payload?.time ?? null,
-      memory: payload?.memory ?? null,
+      compile_output: compileOutput,
+      time: readNullableString(payload.time),
+      memory: readNullableString(payload.memory),
       unparsed_lines,
     };
 
@@ -249,12 +412,13 @@ export async function GET(req: Request) {
       slug,
       userId: user.uid ?? null,
       judge0HttpStatus: r.status,
-      judge0Status: payload?.status ?? null,
-      time: payload?.time ?? null,
-      memory: payload?.memory ?? null,
+      judge0Status: status ?? null,
+      submissionStatus,
+      time: readNullableString(payload.time),
+      memory: readNullableString(payload.memory),
       caseCount: Array.isArray(cases) ? cases.length : 0,
       unparsedLineCount: Array.isArray(unparsed_lines) ? unparsed_lines.length : 0,
-      hasCompileOutput: Boolean(payload?.compile_output),
+      hasCompileOutput: Boolean(compileOutput),
       stderrPreview: stderr_raw.slice(0, 300),
       stdoutPreview: stdout_raw.slice(0, 300),
     });
@@ -263,8 +427,8 @@ export async function GET(req: Request) {
       status: r.status,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: e?.message ?? "Unknown error" }), {
+  } catch (e: unknown) {
+    return new Response(JSON.stringify({ error: messageFromError(e) }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
