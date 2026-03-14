@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Curriculum } from "@/components/curriculum";
 import { Separator } from "@/components/ui/separator";
 
 type UserRecord = {
@@ -170,6 +171,16 @@ export function UserDashboardClient({ userUid, userEmail }: UserDashboardClientP
                 ) : null}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl">Curriculum</CardTitle>
+            <CardDescription>Continue learning tracks from your dashboard</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Curriculum />
           </CardContent>
         </Card>
       </div>
