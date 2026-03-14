@@ -1,6 +1,7 @@
 // app/api/submit/route.ts
-// POST: create submission from hidden tests -> returns { token, meta }
+// POST: create submission from hidden tests -> returns { token, meta, submissionId }
 // GET : poll by token -> returns normalized Judge0 payload with parsed cases
+// GET : by userUuid (without token) -> returns latest attempted/completed submissions
 
 import { cookies } from "next/headers";
 
@@ -23,6 +24,13 @@ const HOST = process.env.RAPIDAPI_HOST!;
 function unauthorized() {
   return new Response('{"error":"Unauthorized"}', {
     status: 401,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function forbidden() {
+  return new Response('{"error":"Forbidden"}', {
+    status: 403,
     headers: { "Content-Type": "application/json" },
   });
 }
@@ -78,6 +86,11 @@ function normalizeSubmissionId(value: string | null) {
   return id && id.length > 0 ? id : null;
 }
 
+function normalizeUserUuid(value: string | null) {
+  const userUuid = value?.trim();
+  return userUuid && userUuid.length > 0 ? userUuid : null;
+}
+
 function parseJudge0Payload(text: string): Judge0Payload {
   try {
     const parsed = JSON.parse(text);
@@ -108,6 +121,93 @@ function firstNonEmpty(values: Array<string | null>): string {
 
 function messageFromError(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
+}
+
+type SubmissionLookupRecord = {
+  id: string;
+  problemId: string;
+  status: SubmissionStatus | "unknown";
+  languageId: number | null;
+  judge0Token: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+function readNullableNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return null;
+}
+
+function toIsoOrNull(value: unknown) {
+  if (typeof value !== "string") return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+function toMillis(value: string | null) {
+  if (!value) return 0;
+  const date = new Date(value);
+  const millis = date.getTime();
+  return Number.isNaN(millis) ? 0 : millis;
+}
+
+function normalizeSubmissionStatus(value: unknown): SubmissionStatus | "unknown" {
+  if (
+    value === "queued" ||
+    value === "running" ||
+    value === "completed" ||
+    value === "compile_error" ||
+    value === "runtime_error" ||
+    value === "failed"
+  ) {
+    return value;
+  }
+  return "unknown";
+}
+
+function toSubmissionLookupRecord(id: string, value: unknown): SubmissionLookupRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Partial<SubmissionRecord> & Record<string, unknown>;
+  const problemId = typeof raw.problemId === "string" ? raw.problemId : "";
+  if (!problemId) return null;
+
+  return {
+    id,
+    problemId,
+    status: normalizeSubmissionStatus(raw.status),
+    languageId: readNullableNumber(raw.languageId),
+    judge0Token: typeof raw.judge0Token === "string" ? raw.judge0Token : "",
+    createdAt: toIsoOrNull(raw.createdAt),
+    updatedAt: toIsoOrNull(raw.updatedAt),
+  };
+}
+
+function sortByMostRecent(a: SubmissionLookupRecord, b: SubmissionLookupRecord) {
+  const aStamp = Math.max(toMillis(a.updatedAt), toMillis(a.createdAt));
+  const bStamp = Math.max(toMillis(b.updatedAt), toMillis(b.createdAt));
+  return bStamp - aStamp;
+}
+
+async function lookupRecentSubmissionsByUser(userUuid: string) {
+  const snap = await adminDb
+    .collection(SUBMISSIONS_COLLECTION)
+    .where("userId", "==", userUuid)
+    .get();
+
+  const records = snap.docs
+    .map((doc) => toSubmissionLookupRecord(doc.id, doc.data()))
+    .filter((record): record is SubmissionLookupRecord => record !== null)
+    .sort(sortByMostRecent);
+
+  const mostRecentAttempted = records[0] ?? null;
+  const mostRecentCompleted = records.find((record) => record.status === "completed") ?? null;
+
+  return {
+    userUuid,
+    mostRecentAttempted,
+    mostRecentCompleted,
+  };
 }
 
 function readJudge0Status(input: unknown): { id?: number; description?: string } {
@@ -336,22 +436,32 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   try {
-    assertEnv();
-
     const user = await requireAuth();
     if (!user) return unauthorized();
 
     const requestUrl = new URL(req.url);
     const token = requestUrl.searchParams.get("token");
+    const userUuid = normalizeUserUuid(requestUrl.searchParams.get("userUuid"));
     const submissionId = normalizeSubmissionId(requestUrl.searchParams.get("submissionId"));
     const referer = req.headers.get("referer");
     const slugFromQuery = requestUrl.searchParams.get("slug");
     const slug = slugFromQuery?.trim() || slugFromReferer(referer);
 
+    if (!token && userUuid) {
+      if (userUuid !== user.uid) return forbidden();
+
+      const latest = await lookupRecentSubmissionsByUser(userUuid);
+      return new Response(JSON.stringify(latest), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     console.info("[/api/submit][GET] Incoming request", {
       method: req.method,
       path: requestUrl.pathname,
       token,
+      userUuid,
       submissionId,
       slug,
       userId: user.uid ?? null,
@@ -360,7 +470,9 @@ export async function GET(req: Request) {
       referer,
     });
 
-    if (!token) return new Response('{"error":"Missing token"}', { status: 400 });
+    if (!token) return new Response('{"error":"Missing token or userUuid"}', { status: 400 });
+
+    assertEnv();
 
     const url = new URL(`${BASE}/submissions/${token}`);
     url.searchParams.set("base64_encoded", "false");
