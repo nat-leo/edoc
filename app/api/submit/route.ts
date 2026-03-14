@@ -46,8 +46,13 @@ type HiddenTest = {
 };
 
 type Judge0Payload = Record<string, unknown>;
+type ProblemDocument = {
+  tests?: HiddenTest[];
+  paramOrder?: string[];
+  metaData?: string | null;
+};
 type ProblemApiPayload = {
-  problem?: Record<string, unknown>;
+  problem?: ProblemDocument;
   [key: string]: unknown;
 };
 
@@ -217,8 +222,9 @@ export async function POST(req: Request) {
       });
     }
 
-    const tests = problem.tests as HiddenTest[] | undefined;
-    const paramOrder = problem.paramOrder as string[] | undefined;
+    const tests = problem.tests;
+    const paramOrder = problem.paramOrder;
+    const metaData = typeof problem.metaData === "string" ? problem.metaData : null;
 
     if (!Array.isArray(tests) || tests.length === 0) {
       return new Response('{"error":"No hidden tests found"}', {
@@ -247,7 +253,7 @@ export async function POST(req: Request) {
 
     const final_source_code = makeHarness({
       source_code,
-      metaData: problem.metaData ?? null,
+      metaData,
       cases: runnerCases,
       paramOrder,
     });
