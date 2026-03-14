@@ -4,32 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ProblemCard } from "@/components/problem-card";
 import { Curriculum as CurriculumItem, loadCurriculums } from "@/lib/curriculum";
-
-export function CurriculumCard({ name, totalProblems, progress, content }: CurriculumItem) {
-  const categoryHref = `/curriculum/${encodeURIComponent(name.toLowerCase())}`;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{name}</CardTitle>
-        <CardDescription>
-          {progress} / {totalProblems} Problems
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <p>{content || "No description available yet."}</p>
-        <div className="grid grid-cols-2 gap-2">
-          <Button asChild>
-            <Link href={categoryHref}>Learn</Link>
-          </Button>
-          <Button variant="secondary">Test</Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 export function Curriculum() {
   const [curriculums, setCurriculums] = useState<CurriculumItem[]>([]);
@@ -71,15 +47,27 @@ export function Curriculum() {
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {curriculums.map((curriculum) => (
-        <CurriculumCard
-          key={curriculum.name}
-          name={curriculum.name}
-          progress={curriculum.progress}
-          totalProblems={curriculum.totalProblems}
-          content={curriculum.content}
-        />
-      ))}
+      {curriculums.map((curriculum) => {
+        const categoryHref = `/curriculum/${encodeURIComponent(curriculum.name.toLowerCase())}`;
+
+        return (
+          <ProblemCard
+            key={curriculum.name}
+            title={curriculum.name}
+            description={`${curriculum.progress} / ${curriculum.totalProblems} Problems`}
+            content={<p>{curriculum.content || "No description available yet."}</p>}
+            actions={
+              <div className="grid w-full grid-cols-2 gap-2">
+                <Button asChild>
+                  <Link href={categoryHref}>Learn</Link>
+                </Button>
+                <Button variant="secondary">Test</Button>
+              </div>
+            }
+            titleClassName="text-xl"
+          />
+        );
+      })}
     </div>
   );
 }

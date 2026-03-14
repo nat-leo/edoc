@@ -6,13 +6,7 @@ import { useParams } from "next/navigation";
 import DOMPurify from "dompurify";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProblemCard } from "@/components/problem-card";
 
 type Problem = {
   title: string;
@@ -133,27 +127,25 @@ export default function CurriculumCategoryPage() {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {problems.map((problem) => (
-        <Card key={problem.titleSlug} className="h-full">
-          <CardHeader className="gap-3">
-            <div className="flex items-start justify-between gap-3">
-              <CardTitle className="line-clamp-2 text-base">{problem.title}</CardTitle>
-              <Badge variant={difficultyVariant(problem.difficulty)}>{problem.difficulty}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
+        <ProblemCard
+          key={problem.titleSlug}
+          title={problem.title}
+          badge={<Badge variant={difficultyVariant(problem.difficulty)}>{problem.difficulty}</Badge>}
+          content={
             <div className="relative h-28 overflow-hidden text-sm text-muted-foreground">
               <div
                 dangerouslySetInnerHTML={{ __html: sanitizeHtml(problem.content) }}
               />
               <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-card to-transparent" />
             </div>
-          </CardContent>
-          <CardFooter className="pt-0">
+          }
+          actions={
             <Button asChild className="w-full">
               <Link href={`/problems/${problem.titleSlug}`}>Solve</Link>
             </Button>
-          </CardFooter>
-        </Card>
+          }
+          footerClassName="w-full"
+        />
       ))}
     </div>
   );
