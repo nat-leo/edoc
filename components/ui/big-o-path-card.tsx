@@ -10,7 +10,8 @@ export type BigOType = "O(1)" | "O(n)" | "O(n^2)";
 type Props = {
   type: BigOType;
   label?: string;              // defaults to O(n) / O(n^2)
-  height?: number;             // px
+  size?: number;               // px, square side length
+  height?: number;             // deprecated alias for size
   className?: string;          // outer card sizing
   strokeWidth?: number;
   durationMs?: number;         // line draw duration
@@ -80,14 +81,16 @@ function makePath(type: BigOType, w: number, h: number) {
 export function BigOPathCard({
   type,
   label,
-  height = 240,
+  size,
+  height,
   className,
   strokeWidth = 6,
   durationMs = 1100,
   delayLabelMs = 150,
 }: Props) {
+  const side = size ?? height ?? 240;
   const ref = React.useRef<HTMLDivElement | null>(null);
-  const [size, setSize] = React.useState({ w: 520, h: height });
+  const [chartSize, setChartSize] = React.useState({ w: side, h: side });
 
   React.useEffect(() => {
     if (!ref.current) return;
@@ -96,7 +99,8 @@ export function BigOPathCard({
 
     const ro = new ResizeObserver(() => {
       const rect = el.getBoundingClientRect();
-      setSize({ w: Math.max(240, rect.width), h: Math.max(160, rect.height) });
+      const nextSide = Math.max(160, Math.min(rect.width, rect.height));
+      setChartSize({ w: nextSide, h: nextSide });
     });
 
     ro.observe(el);
@@ -107,8 +111,8 @@ export function BigOPathCard({
   const bigO: BigOType = type;              // what drives the path
 
   const { d, endPoint } = React.useMemo(
-    () => makePath(bigO, size.w, size.h),
-    [type, size.w, size.h]
+    () => makePath(bigO, chartSize.w, chartSize.h),
+    [type, chartSize.w, chartSize.h]
   );
 
   const lineDuration = durationMs / 1000;
@@ -118,10 +122,10 @@ export function BigOPathCard({
     <Card
       ref={ref}
       className={cn(
-        "relative overflow-hidden rounded-2xl border bg-background p-0",
+        "relative aspect-square overflow-hidden rounded-2xl border bg-background p-0",
         className
       )}
-      style={{ height }}
+      style={{ width: side, height: side }}
     >
       {/* Optional subtle background */}
       <div className="absolute inset-0 bg-gradient-to-br from-muted/40 to-background" />
@@ -129,7 +133,7 @@ export function BigOPathCard({
       {/* SVG drawing area */}
       <svg
         className="relative h-full w-full"
-        viewBox={`0 0 ${size.w} ${size.h}`}
+        viewBox={`0 0 ${chartSize.w} ${chartSize.h}`}
         preserveAspectRatio="none"
       >
         {/* The path (drawn) */}
@@ -165,7 +169,7 @@ export function BigOPathCard({
           transition={{ delay: labelDelay, duration: 0.35, ease: "easeOut" }}
         >
           <foreignObject
-            x={Math.min(endPoint.x + 10, size.w - 140)}
+            x={Math.min(endPoint.x + 10, chartSize.w - 140)}
             y={Math.max(endPoint.y - 34, 8)}
             width={140}
             height={60}
