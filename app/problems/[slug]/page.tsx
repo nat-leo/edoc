@@ -145,6 +145,41 @@ function parseJsonMaybe(v: string | undefined) {
   }
 }
 
+function extractCaseStdout(stdoutRaw: string | null | undefined): Record<number, string[]> {
+  const out: Record<number, string[]> = {};
+  if (!stdoutRaw) return out;
+
+  const lines = stdoutRaw.split(/\r?\n/).filter((line) => line.length > 0);
+  let pending: string[] = [];
+
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line);
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed) &&
+        (parsed as Record<string, unknown>).type === "CASE"
+      ) {
+        const caseIndex = (parsed as Record<string, unknown>).i;
+        if (typeof caseIndex === "number" && Number.isFinite(caseIndex)) {
+          if (!out[caseIndex]) out[caseIndex] = [];
+          if (pending.length > 0) {
+            out[caseIndex].push(...pending);
+            pending = [];
+          }
+        }
+        continue;
+      }
+      pending.push(line);
+    } catch {
+      pending.push(line);
+    }
+  }
+
+  return out;
+}
+
 type AnyObj = Record<string, unknown>;
 
 function extractQuestion(payload: any): any | null {
@@ -492,6 +527,10 @@ export default function CodeEditorPage() {
     if (status === "error") return <Badge variant="destructive">Error</Badge>;
     return <Badge variant="outline">Idle</Badge>;
   })();
+  const caseStdout = React.useMemo(
+    () => extractCaseStdout(results?.stdout_raw),
+    [results?.stdout_raw]
+  );
 
   function badgeClass(b: CaseBadge | undefined) {
     if (b === "pass") return "border border-emerald-500 text-emerald-600";
@@ -739,9 +778,19 @@ export default function CodeEditorPage() {
                                           </span>
                                         </button>
                                         {open ? (
-                                          <pre className="mt-2 max-w-full overflow-x-auto whitespace-pre-wrap break-all text-[11px] font-mono text-foreground">
-                                            {JSON.stringify(c, null, 2)}
-                                          </pre>
+                                          <div className="mt-2 space-y-2">
+                                            <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-all text-[11px] font-mono text-foreground">
+                                              {JSON.stringify(c, null, 2)}
+                                            </pre>
+                                            <div className="rounded-md border p-2">
+                                              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                                Stdout
+                                              </div>
+                                              <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-all text-[11px] font-mono text-foreground">
+                                                {(caseStdout[c.i] ?? []).join("\n") || "(no stdout for this case)"}
+                                              </pre>
+                                            </div>
+                                          </div>
                                         ) : null}
                                       </Card>
                                     );
@@ -750,7 +799,7 @@ export default function CodeEditorPage() {
                               </div>
                             ) : null}
 
-                            {results?.stdout_raw ? (
+                            {results?.stdout_raw && !results?.cases?.length ? (
                               <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-all font-mono text-sm text-foreground">
                                 {results.stdout_raw}
                               </pre>
