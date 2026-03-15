@@ -514,7 +514,9 @@ export default function CodeEditorPage() {
       });
       setStatus("error");
     } finally {
-      setActiveTab("results");
+      if (mode === "submit") {
+        setActiveTab("results");
+      }
     }
   }
 
