@@ -534,6 +534,13 @@ export default function CodeEditorPage() {
     [results?.stdout_raw]
   );
 
+  function formatMetric(value: unknown) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+    return "n/a";
+  }
+
   function badgeClass(b: CaseBadge | undefined) {
     if (b === "pass") return "border border-emerald-500 text-emerald-600";
     if (b === "fail" || b === "error") return "border border-destructive text-destructive";
@@ -793,9 +800,11 @@ export default function CodeEditorPage() {
                                         </button>
                                         {open ? (
                                           <div className="mt-2 space-y-2">
-                                            <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-all text-[11px] font-mono text-foreground">
-                                              {JSON.stringify(c, null, 2)}
-                                            </pre>
+                                            <div className="rounded-md border p-2 text-[11px] font-mono text-foreground">
+                                              <div>MS: {formatMetric(c.runtime_ms)}</div>
+                                              <div>MB: {formatMetric(c.mb)}</div>
+                                              <div>Load: {formatMetric(c.n)}</div>
+                                            </div>
                                             <div className="rounded-md border p-2">
                                               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                                                 Stdout
