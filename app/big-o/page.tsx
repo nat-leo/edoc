@@ -86,7 +86,7 @@ export default function Page() {
       {error ? <p className="mb-4 text-sm text-red-600">{error}</p> : null}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         {cardTypes.map((type, index) => (
-          <BigOPathCard key={index} type={type} className="h-[260px]" />
+          <BigOPathCard key={index} type={type} size={260} />
         ))}
       </div>
     </div>
