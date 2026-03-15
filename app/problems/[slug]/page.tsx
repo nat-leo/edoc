@@ -741,6 +741,18 @@ export default function CodeEditorPage() {
                                   </div>
                                 );
                               })}
+
+                              <div className="space-y-2">
+                                <div className="text-sm text-muted-foreground font-semibold">
+                                  stdout =
+                                </div>
+                                <div className="rounded-xl bg-muted/50 p-3">
+                                  <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-all font-mono text-sm text-foreground">
+                                    {(caseStdout[caseIndex] ?? []).join("\n") ||
+                                      "Run or Submit to see stdout for this case."}
+                                  </pre>
+                                </div>
+                              </div>
                             </div>
                           </ScrollArea>
                         </div>
