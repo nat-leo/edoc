@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
+import { BigOPathCard, type BigOType } from "@/components/ui/big-o-path-card";
 import { JUDGE0_LANGUAGE_ID, Language, ProblemSignature as StarterProblemSignature, renderStarterCode } from "@/lib/starter-code";
 import { badgeFromCase, CaseBadge, JudgeCaseResult, RunResponse } from "@/lib/judge0";
 
@@ -70,6 +71,10 @@ type ProblemQuestion = {
 };
 
 type Testcase = Record<string, string> & { _expected?: string };
+type BigOPredictResponse = {
+  big_o?: string;
+  error?: string;
+};
 
 function parseExampleTestcasesToCases(
   exampleTestcases: string,
@@ -178,6 +183,13 @@ function extractCaseStdout(stdoutRaw: string | null | undefined): Record<number,
   }
 
   return out;
+}
+
+function normalizeBigOType(value: unknown): BigOType | null {
+  if (value === "O(1)" || value === "O(n)" || value === "O(n^2)") {
+    return value;
+  }
+  return null;
 }
 
 type AnyObj = Record<string, unknown>;
@@ -330,6 +342,9 @@ export default function CodeEditorPage() {
   const [caseBadges, setCaseBadges] = React.useState<Record<number, CaseBadge>>({});
   const [activeTab, setActiveTab] = React.useState<"testcases" | "results">("testcases");
   const [openResultCase, setOpenResultCase] = React.useState<number | null>(null);
+  const [bigOType, setBigOType] = React.useState<BigOType | null>(null);
+  const [bigOLoading, setBigOLoading] = React.useState(false);
+  const [bigOError, setBigOError] = React.useState<string | null>(null);
 
   const problemTitle =
     problemData?.title ?? (problemLoading ? "Loading problem..." : "Problem");
@@ -533,6 +548,17 @@ export default function CodeEditorPage() {
     () => extractCaseStdout(results?.stdout_raw),
     [results?.stdout_raw]
   );
+  const runtimeSeries = React.useMemo(() => {
+    return (results?.cases ?? [])
+      .slice()
+      .sort((a, b) => a.i - b.i)
+      .map((c) =>
+        typeof c.runtime_ms === "number" && Number.isFinite(c.runtime_ms)
+          ? Math.max(1, Math.round(c.runtime_ms * 1000))
+          : null
+      )
+      .filter((value): value is number => value !== null);
+  }, [results?.cases]);
 
   function formatMetric(value: unknown) {
     if (typeof value === "number" && Number.isFinite(value)) {
@@ -540,6 +566,65 @@ export default function CodeEditorPage() {
     }
     return "n/a";
   }
+
+  React.useEffect(() => {
+    let active = true;
+
+    async function predictBigO() {
+      if (runtimeSeries.length < 2) {
+        if (!active) return;
+        setBigOType(null);
+        setBigOError(null);
+        setBigOLoading(false);
+        return;
+      }
+
+      try {
+        setBigOLoading(true);
+        setBigOError(null);
+
+        const res = await fetch("/api/big-o", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            series: runtimeSeries,
+            return_diagnostics: false,
+            output: "prob",
+          }),
+          cache: "no-store",
+        });
+
+        const payload = (await res.json().catch(() => ({}))) as BigOPredictResponse;
+        if (!res.ok) {
+          throw new Error(payload.error ?? `Big O request failed (${res.status})`);
+        }
+
+        const nextType = normalizeBigOType(payload.big_o);
+        if (!nextType) {
+          throw new Error("Unsupported Big O prediction response");
+        }
+
+        if (!active) return;
+        setBigOType(nextType);
+      } catch (err: unknown) {
+        if (!active) return;
+        setBigOType(null);
+        if (err instanceof Error) {
+          setBigOError(err.message);
+        } else {
+          setBigOError("Failed to predict Big O");
+        }
+      } finally {
+        if (!active) return;
+        setBigOLoading(false);
+      }
+    }
+
+    void predictBigO();
+    return () => {
+      active = false;
+    };
+  }, [runtimeSeries]);
 
   function badgeClass(b: CaseBadge | undefined) {
     if (b === "pass") return "border border-emerald-500 text-emerald-600";
@@ -777,6 +862,21 @@ export default function CodeEditorPage() {
                       <Card className="min-h-0 flex-1 p-3">
                         <ScrollArea className="h-full">
                           <div className="space-y-3">
+                            {runtimeSeries.length > 0 ? (
+                              <div className="space-y-2">
+                                <div className="text-xs font-semibold text-muted-foreground">Big O Prediction</div>
+                                {bigOError ? (
+                                  <p className="text-xs text-destructive">{bigOError}</p>
+                                ) : (
+                                  <BigOPathCard
+                                    type={bigOType ?? "O(n)"}
+                                    label={bigOLoading ? "Predicting..." : (bigOType ?? "Pending")}
+                                    size={170}
+                                  />
+                                )}
+                              </div>
+                            ) : null}
+
                             {results?.cases?.length ? (
                               <div className="space-y-2">
                                 <div className="text-xs font-semibold text-muted-foreground">
