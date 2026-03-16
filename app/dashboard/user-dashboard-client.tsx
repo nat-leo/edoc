@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Curriculum } from "@/components/curriculum";
 import { ProblemCard } from "@/components/problem-card";
 import { Separator } from "@/components/ui/separator";
+import { ContributionActivityMonitor } from "@/components/contribution-activity-monitor";
 
 type UserRecord = {
   id: string;
@@ -76,8 +77,6 @@ export function UserDashboardClient({ userUid, userEmail }: UserDashboardClientP
   const [recentProblem, setRecentProblem] = useState<RecentSubmission | null>(null);
   const [recentProblemLoading, setRecentProblemLoading] = useState(true);
   const [recentProblemError, setRecentProblemError] = useState<string | null>(null);
-
-  const primaryRecord = useMemo(() => items[0] ?? null, [items]);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -233,21 +232,7 @@ export function UserDashboardClient({ userUid, userEmail }: UserDashboardClientP
                 </Button>
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="rounded-lg border p-4">
-                  <p className="text-sm font-medium">Primary Record</p>
-                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Document ID: {primaryRecord?.id}</p>
-                  <pre className="mt-3 overflow-x-auto rounded bg-zinc-100 p-3 text-xs dark:bg-zinc-950">
-                    {JSON.stringify(primaryRecord, null, 2)}
-                  </pre>
-                </div>
-
-                {items.length > 1 ? (
-                  <div className="rounded-lg border p-4">
-                    <p className="text-sm font-medium">Additional Records: {items.length - 1}</p>
-                  </div>
-                ) : null}
-              </div>
+              <ContributionActivityMonitor />
             )}
           </CardContent>
         </Card>
