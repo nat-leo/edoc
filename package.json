@@ -5,8 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "dev:staging": "DOTENV_CONFIG_PATH=.env.staging node --require dotenv/config ./node_modules/next/dist/bin/next dev",
     "build": "next build",
+    "build:staging": "DOTENV_CONFIG_PATH=.env.staging node --require dotenv/config ./node_modules/next/dist/bin/next build",
+    "build:production": "DOTENV_CONFIG_PATH=.env.production node --require dotenv/config ./node_modules/next/dist/bin/next build",
     "start": "next start",
+    "start:staging": "DOTENV_CONFIG_PATH=.env.staging node --require dotenv/config ./node_modules/next/dist/bin/next start",
+    "start:production": "DOTENV_CONFIG_PATH=.env.production node --require dotenv/config ./node_modules/next/dist/bin/next start",
     "lint": "eslint",
     "test": "vitest"
   },

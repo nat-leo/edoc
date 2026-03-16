@@ -11,7 +11,7 @@ Developer‑oriented notes for working on the codebase (Next.js 16 / React 19 / 
 
 ## Getting Started
 1) Install deps: `npm install`
-2) Create `./.env.local` with:
+2) Create `./.env.production` and `./.env.staging` with:
 ```
 NEXT_PUBLIC_FIREBASE_API_KEY=xxx
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=xxx.firebaseapp.com
@@ -27,7 +27,12 @@ RAPIDAPI_HOST=judge0-ce.p.rapidapi.com
 ```
 NOTE: Firebase generates the Private Key, Metadata (Project ID, Client Email, etc) and creates a download called `edoc-blahblahblah-firebase.json`. Copy-paste those lines into the env file. There's a way of just using the json file, but here it's just copypaste for now.
 
-3) Run dev server: `npm run dev` (Node 20.19+ recommended for vitest and vite dependencies). Open http://localhost:3000.
+3) Run the app (Node 20.19+ recommended for vitest and vite dependencies):
+- `npm run dev` for default Next.js behavior (uses `.env.local` in development if present).
+- `npm run dev:staging` to run dev server with `.env.staging`.
+- `npm run build:staging && npm run start:staging` for a staging-like production run.
+- `npm run build:production && npm run start:production` for a production-like local run.
+
 4) Lint: `npm run lint` (ESLint 9 / Next config).
 
 ## Key Flows
