@@ -32,6 +32,7 @@ NOTE: Firebase generates the Private Key, Metadata (Project ID, Client Email, et
 - `npm run dev:staging` to run dev server with `.env.staging`.
 - `npm run build:staging && npm run start:staging` for a staging-like production run.
 - `npm run build:production && npm run start:production` for a production-like local run.
+  Note: `NEXT_PUBLIC_*` vars are baked into the build output, so `start:staging` should use a staging build and `start:production` should use a production build.
 
 4) Lint: `npm run lint` (ESLint 9 / Next config).
 
