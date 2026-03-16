@@ -31,12 +31,11 @@ import {
 
 // Optional icons (if you have lucide-react)
 // import { Eye, EyeOff, Github, Chrome } from "lucide-react";
-
-type AuthMode = "signin" | "signup";
+type AuthMode = "login" | "signup";
 
 type LoginFormProps = {
   className?: string;
-
+  authMode?: AuthMode;
   /**
    * Where to send the user after successful auth.
    * In real apps, this is often the original "returnTo" URL.
@@ -86,14 +85,18 @@ export function sanitizeRedirect(input: string | null | undefined, safeRedirect:
   return s;
 }
 
-export function LoginPageContent() {
+export function LoginPageContent({authMode="login"}: LoginFormProps) {
   const router = useRouter();
   const sp = useSearchParams();
   const redirectTo = sanitizeRedirect(sp.get("redirectTo"), "/");
+  const modeParam = sp.get("mode");
+  const queryMode: AuthMode = modeParam === "signup" ? "signup" : "login";
+  const resolvedMode: AuthMode = modeParam ? queryMode : authMode;
 
   return (
     <LoginForm
       redirectTo={redirectTo}
+      authMode={resolvedMode}
       onOAuth={async (provider) => {
         if (provider === "google") {
           await signInWithGoogle();
@@ -120,11 +123,15 @@ export function LoginPageContent() {
 export function LoginForm({
   className,
   redirectTo = "/",
+  authMode = "login",
   onSignIn,
   onSignUp,
   onOAuth,
 }: LoginFormProps) {
-  const [mode, setMode] = React.useState<AuthMode>("signin");
+  const [mode, setMode] = React.useState<AuthMode>(authMode);
+  React.useEffect(() => {
+    setMode(authMode);
+  }, [authMode]);
 
   const [showPassword, setShowPassword] = React.useState(false);
   const [pending, setPending] = React.useState(false);
@@ -163,7 +170,7 @@ export function LoginForm({
       }
       // TODO: redirect to `redirectTo` (router.push), or rely on server redirect
     } catch (err: any) {
-      setError(err?.message ?? "Sign in failed. Please try again.");
+      setError(err?.message ?? "Log in failed. Please try again.");
     } finally {
       setPending(false);
     }
@@ -231,7 +238,7 @@ export function LoginForm({
 
             <Tabs value={mode} onValueChange={(v) => setMode(v as AuthMode)} className="w-full">
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="signin">Sign in</TabsTrigger>
+                <TabsTrigger value="signin">Log in</TabsTrigger>
                 <TabsTrigger value="signup">Sign up</TabsTrigger>
               </TabsList>
 
@@ -328,7 +335,7 @@ export function LoginForm({
                   </div>
 
                   <Button type="submit" className="w-full" disabled={pending}>
-                    {pending ? "Signing in…" : "Sign in"}
+                    {pending ? "Signing in…" : "Log in"}
                   </Button>
                 </form>
               </TabsContent>
@@ -415,7 +422,7 @@ export function LoginForm({
 export default function LoginPage() {
   return (
     <Suspense fallback={<div className="p-6">Loading…</div>}>
-      <LoginPageContent />
+      <LoginPageContent authMode="login"/>
     </Suspense>
   );
 }

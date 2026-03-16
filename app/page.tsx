@@ -21,7 +21,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loginHref = "/login?redirectTo=/";
+  const signInHref = "/login?redirectTo=/dashboard&mode=signin";
+  const signUpHref = "/login?redirectTo=/dashboard&mode=signup";
+  const heroSignInHref = "/login?redirectTo=/&mode=signin";
 
   useEffect(() => {
     const fetchProblems = async () => {
@@ -58,11 +60,11 @@ export default function Home() {
               className="hidden sm:inline-flex"
               asChild
             >
-              <Link href={loginHref}>Sign in</Link>
+              <Link href={signInHref}>Log in</Link>
             </Button>
 
             <Button asChild>
-              <Link href={loginHref}>Let&apos;s Practice</Link>
+              <Link href={signUpHref}>Sign Up</Link>
             </Button>
           </div>
         </div>
@@ -84,8 +86,8 @@ export default function Home() {
           </p>
 
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Button size="lg" onClick={() => router.push(loginHref)}>
-              Let&apos;s Practice
+            <Button size="lg" onClick={() => router.push(signUpHref)}>
+              Sign Up
             </Button>
             <Button
               size="lg"
@@ -93,7 +95,7 @@ export default function Home() {
               className="border-zinc-200 bg-transparent dark:border-zinc-900"
               asChild
             >
-              <Link href="/login?redirectTo=/">Sign in</Link>
+              <Link href={heroSignInHref}>Log in</Link>
             </Button>
           </div>
 
@@ -165,9 +167,6 @@ export default function Home() {
                 <div className="text-xs text-zinc-500 dark:text-zinc-400">
                   Sign in to start solving.
                 </div>
-                <Button asChild>
-                  <Link href={loginHref}>Let&apos;s Practice</Link>
-                </Button>
               </div>
             </div>
           </Card>
