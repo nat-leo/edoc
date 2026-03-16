@@ -35,7 +35,7 @@ type AuthMode = "login" | "signup";
 
 type LoginFormProps = {
   className?: string;
-  authMode?: AuthMode;
+  authMode: AuthMode;
   /**
    * Where to send the user after successful auth.
    * In real apps, this is often the original "returnTo" URL.
@@ -238,7 +238,7 @@ export function LoginForm({
 
             <Tabs value={mode} onValueChange={(v) => setMode(v as AuthMode)} className="w-full">
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="signin">Log in</TabsTrigger>
+                <TabsTrigger value="login">Log in</TabsTrigger>
                 <TabsTrigger value="signup">Sign up</TabsTrigger>
               </TabsList>
 
@@ -270,7 +270,7 @@ export function LoginForm({
                 <Separator className="flex-1" />
               </div>
 
-              <TabsContent value="signin" className="mt-0">
+              <TabsContent value="login" className="mt-0">
                 <form onSubmit={handleSignIn} className="space-y-4" noValidate>
                   <div className="space-y-2">
                     <Label htmlFor="emailIn">Email</Label>
