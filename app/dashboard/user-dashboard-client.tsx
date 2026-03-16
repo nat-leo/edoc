@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Curriculum } from "@/components/curriculum";
 import { ProblemCard } from "@/components/problem-card";
 import { Separator } from "@/components/ui/separator";
-import { ContributionActivityMonitor } from "@/components/contribution-activity-monitor";
+import { ContributionActivityMonitor, type ActivityDay } from "@/components/contribution-activity-monitor";
 
 type UserRecord = {
   id: string;
@@ -43,6 +43,11 @@ type LatestSubmissionApiResponse = {
   userUuid?: string;
   mostRecentAttempted?: RecentSubmission | null;
   mostRecentCompleted?: RecentSubmission | null;
+  error?: string;
+};
+
+type ActivityApiResponse = {
+  days?: ActivityDay[];
   error?: string;
 };
 
@@ -77,6 +82,9 @@ export function UserDashboardClient({ userUid, userEmail }: UserDashboardClientP
   const [recentProblem, setRecentProblem] = useState<RecentSubmission | null>(null);
   const [recentProblemLoading, setRecentProblemLoading] = useState(true);
   const [recentProblemError, setRecentProblemError] = useState<string | null>(null);
+  const [activityDays, setActivityDays] = useState<ActivityDay[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -144,6 +152,48 @@ export function UserDashboardClient({ userUid, userEmail }: UserDashboardClientP
     void loadRecentProblem();
   }, [loadRecentProblem]);
 
+  const loadActivity = useCallback(async () => {
+    setActivityLoading(true);
+    setActivityError(null);
+
+    try {
+      const params = new URLSearchParams({
+        userUuid: userUid,
+        groupBy: "day",
+        metrics: "submissions,logins",
+      });
+
+      const res = await fetch(`/api/activity?${params.toString()}`, {
+        cache: "no-store",
+      });
+
+      if (res.status === 401) {
+        router.replace("/login?redirectTo=/dashboard");
+        return;
+      }
+
+      const json = (await res.json()) as ActivityApiResponse;
+      if (!res.ok) {
+        throw new Error(json.error ?? `HTTP ${res.status}`);
+      }
+
+      setActivityDays(Array.isArray(json.days) ? json.days : []);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setActivityError(err.message);
+      } else {
+        setActivityError("Failed to load activity data");
+      }
+      setActivityDays([]);
+    } finally {
+      setActivityLoading(false);
+    }
+  }, [router, userUid]);
+
+  useEffect(() => {
+    void loadActivity();
+  }, [loadActivity]);
+
   async function handleCreateProfile() {
     setPendingCreate(true);
     setError(null);
@@ -195,7 +245,14 @@ export function UserDashboardClient({ userUid, userEmail }: UserDashboardClientP
               </div>
 
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => void loadUsers()} disabled={loading}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    void loadUsers();
+                    void loadActivity();
+                  }}
+                  disabled={loading || activityLoading}
+                >
                   Refresh
                 </Button>
                 <Button variant="destructive" onClick={() => void handleSignOut()}>
@@ -232,7 +289,11 @@ export function UserDashboardClient({ userUid, userEmail }: UserDashboardClientP
                 </Button>
               </div>
             ) : (
-              <ContributionActivityMonitor />
+              <ContributionActivityMonitor
+                days={activityDays}
+                isLoading={activityLoading}
+                error={activityError}
+              />
             )}
           </CardContent>
         </Card>
