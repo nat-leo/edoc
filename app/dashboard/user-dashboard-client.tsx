@@ -240,8 +240,7 @@ export function UserDashboardClient({ userUid, userEmail }: UserDashboardClientP
           <CardHeader className="pb-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <CardTitle className="text-2xl">User Dashboard</CardTitle>
-                <CardDescription>Private page backed by `/api/users`</CardDescription>
+                <CardTitle className="text-2xl">Hello, {userEmail}</CardTitle>
               </div>
 
               <div className="flex gap-2">
@@ -264,7 +263,6 @@ export function UserDashboardClient({ userUid, userEmail }: UserDashboardClientP
 
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              <Badge variant="outline">UID: {userUid}</Badge>
               <Badge variant="secondary">{userEmail || "No email on account"}</Badge>
             </div>
 
