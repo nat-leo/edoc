@@ -5,15 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "dev:staging": "DOTENV_CONFIG_PATH=.env.staging node --require dotenv/config ./node_modules/next/dist/bin/next dev",
+    "dev:staging": "dotenv -e .env.staging -- next dev",
     "build": "next build",
-    "build:staging": "DOTENV_CONFIG_PATH=.env.staging node --require dotenv/config ./node_modules/next/dist/bin/next build",
-    "build:production": "DOTENV_CONFIG_PATH=.env.production node --require dotenv/config ./node_modules/next/dist/bin/next build",
+    "build:staging": "dotenv -e .env.staging -- next build",
     "start": "next start",
-    "start:staging": "DOTENV_CONFIG_PATH=.env.staging node --require dotenv/config ./node_modules/next/dist/bin/next start",
-    "start:production": "DOTENV_CONFIG_PATH=.env.production node --require dotenv/config ./node_modules/next/dist/bin/next start",
-    "lint": "eslint",
-    "test": "vitest"
+    "start:staging": "dotenv -e .env.staging -- next start",
+    "lint": "eslint .",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:watch": "vitest --watch",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm run test:run"
   },
   "dependencies": {
     "@firebase-oss/ui-react": "^7.0.2-beta",
