@@ -1,6 +1,6 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 
 import { ContributionActivityMonitor } from "@/components/contribution-activity-monitor";
 
@@ -28,6 +28,83 @@ describe("ContributionActivityMonitor", () => {
 
     expect(monthHeaders.at(-1)).toBe("Apr");
   });
+
+  it.each([
+    "2026-04-01T12:00:00",
+    "2026-04-02T12:00:00",
+    "2026-04-03T12:00:00",
+    "2026-04-04T12:00:00",
+    "2026-04-05T12:00:00",
+  ])(
+    "places the April header in the same week column as the rendered April 1 date when today is %s",
+    (isoDate) => {
+      vi.setSystemTime(new Date(isoDate));
+
+      const { container } = render(
+        <ContributionActivityMonitor
+          days={[
+            {
+              date: "2026-04-01",
+              submissions: 1,
+              logins: 0,
+            },
+          ]}
+        />
+      );
+
+      const scrollRegion = container.querySelector(".overflow-x-auto") as HTMLDivElement | null;
+      expect(scrollRegion).not.toBeNull();
+
+      const scrollCanvas = scrollRegion!.firstElementChild as HTMLDivElement | null;
+      expect(scrollCanvas).not.toBeNull();
+
+      const monthHeaderRow = scrollCanvas!.firstElementChild as HTMLDivElement | null;
+      expect(monthHeaderRow).not.toBeNull();
+
+      const weekColumns = Array.from(scrollCanvas!.lastElementChild?.children ?? []);
+      expect(weekColumns).toHaveLength(53);
+
+      const currentWeekCells = screen.getAllByLabelText(/Week 53, day \d, level \d/);
+      let aprilFirstCell: HTMLElement | null = null;
+
+      for (const cell of currentWeekCells) {
+        fireEvent.pointerEnter(cell);
+        fireEvent.mouseEnter(cell);
+        act(() => {
+          vi.advanceTimersByTime(81);
+        });
+
+        if (screen.queryByText("1 contribution on April 1.")) {
+          aprilFirstCell = cell as HTMLElement;
+          break;
+        }
+
+        fireEvent.pointerLeave(cell);
+        fireEvent.mouseLeave(cell);
+        act(() => {
+          vi.advanceTimersByTime(41);
+        });
+      }
+
+      expect(aprilFirstCell).not.toBeNull();
+
+      const aprilFirstWeekColumn = aprilFirstCell!.parentElement;
+      expect(aprilFirstWeekColumn).not.toBeNull();
+      expect(weekColumns).toContain(aprilFirstWeekColumn!);
+
+      const aprilWeekColumnIndex = weekColumns.indexOf(aprilFirstWeekColumn!);
+      expect(aprilWeekColumnIndex).toBeGreaterThanOrEqual(0);
+
+      const monthHeaderCells = Array.from(monthHeaderRow!.children) as HTMLElement[];
+      const aprilHeaderIndexes = monthHeaderCells.flatMap((cell, index) =>
+        cell.textContent?.trim() === "Apr" ? [index] : []
+      );
+
+      expect(monthHeaderCells[aprilWeekColumnIndex]).toBeDefined();
+      expect(monthHeaderCells[aprilWeekColumnIndex]).toHaveTextContent("Apr");
+      expect(aprilHeaderIndexes).toEqual([aprilWeekColumnIndex]);
+    }
+  );
 
   it("initially scrolls the activity grid so today's cells are visible", () => {
     const { container } = render(<ContributionActivityMonitor days={[]} />);
