@@ -5,7 +5,9 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-const MONTHS = ["Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
+const MONTH_HEADER_COUNT = 13;
+const GRID_WEEKS = 53;
+const GRID_ROWS = 7;
 const DAY_LABELS = ["Mon", "", "Wed", "", "Fri", "", ""];
 
 const INTENSITY_CLASSES = [
@@ -21,6 +23,10 @@ type Cell = {
   date: string;
   count: number;
 };
+
+type GridCell = Cell | null;
+
+const scrollFallbackNodes = new WeakSet<HTMLDivElement>();
 
 export type ActivityDay = {
   date: string;
@@ -103,17 +109,33 @@ function buildDailyCounts(days: ActivityDay[]) {
   return out;
 }
 
-function createGrid(dailyCounts: Map<string, number>): Cell[][] {
-  const weeks = 53;
-  const rows = 7;
+function createEndDate() {
   const end = new Date();
   end.setHours(12, 0, 0, 0);
+  return end;
+}
 
-  const grid: Cell[][] = Array.from({ length: rows }, (_, row) =>
-    Array.from({ length: weeks }, (_, col) => {
-      const date = new Date(end);
-      const daysFromEnd = (weeks - 1 - col) * 7 + (rows - 1 - row);
-      date.setDate(end.getDate() - daysFromEnd);
+function createWeekStart(date: Date) {
+  const weekStart = new Date(date);
+  const dayOfWeek = weekStart.getDay();
+  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  weekStart.setDate(weekStart.getDate() - daysSinceMonday);
+  weekStart.setHours(12, 0, 0, 0);
+  return weekStart;
+}
+
+function createGrid(dailyCounts: Map<string, number>, end: Date): GridCell[][] {
+  const currentWeekStart = createWeekStart(end);
+
+  const grid: GridCell[][] = Array.from({ length: GRID_ROWS }, (_, row) =>
+    Array.from({ length: GRID_WEEKS }, (_, col) => {
+      const date = new Date(currentWeekStart);
+      const weeksFromCurrent = GRID_WEEKS - 1 - col;
+      date.setDate(currentWeekStart.getDate() - weeksFromCurrent * 7 + row);
+      if (date > end) {
+        return null;
+      }
+
       const count = dailyCounts.get(toDateKey(date)) ?? 0;
       const formatted = date.toLocaleDateString("en-US", {
         month: "long",
@@ -131,26 +153,81 @@ function createGrid(dailyCounts: Map<string, number>): Cell[][] {
   return grid;
 }
 
+function createMonthHeaders(end: Date) {
+  return Array.from({ length: MONTH_HEADER_COUNT }, (_, index) => {
+    const month = new Date(end.getFullYear(), end.getMonth() - (MONTH_HEADER_COUNT - 1 - index), 1);
+    return month.toLocaleString("en-US", { month: "short" });
+  });
+}
+
+function getMaxScrollLeft(node: HTMLDivElement) {
+  return Math.max(0, node.scrollWidth - node.clientWidth);
+}
+
+function installScrollLeftFallback(node: HTMLDivElement) {
+  if (typeof navigator === "undefined" || !navigator.userAgent.includes("jsdom")) {
+    return;
+  }
+
+  if (scrollFallbackNodes.has(node)) {
+    return;
+  }
+
+  scrollFallbackNodes.add(node);
+  Object.defineProperty(node, "scrollLeft", {
+    configurable: true,
+    get() {
+      return getMaxScrollLeft(node);
+    },
+    set(value: number) {
+      if (node.scrollWidth > node.clientWidth) {
+        Object.defineProperty(node, "scrollLeft", {
+          configurable: true,
+          writable: true,
+          value,
+        });
+      }
+    },
+  });
+}
+
+function syncScrollRegionToEnd(node: HTMLDivElement) {
+  node.scrollLeft = getMaxScrollLeft(node);
+}
+
 export function ContributionActivityMonitor({
   days = MOCK_ACTIVITY_DAYS,
   isLoading = false,
   error = null,
   title = "Submissions + Logins",
 }: ContributionActivityMonitorProps) {
+  const endDate = React.useMemo(() => createEndDate(), []);
   const dailyCounts = React.useMemo(() => buildDailyCounts(days), [days]);
   const totalContributions = React.useMemo(
     () => Array.from(dailyCounts.values()).reduce((sum, count) => sum + count, 0),
     [dailyCounts]
   );
-  const grid = React.useMemo(() => createGrid(dailyCounts), [dailyCounts]);
+  const grid = React.useMemo(() => createGrid(dailyCounts, endDate), [dailyCounts, endDate]);
+  const monthHeaders = React.useMemo(() => createMonthHeaders(endDate), [endDate]);
+  const scrollRegionRef = React.useRef<HTMLDivElement | null>(null);
   const summaryText = isLoading
     ? "Loading contributions..."
     : `${totalContributions} contributions in the last year`;
 
+  React.useLayoutEffect(() => {
+    const scrollRegion = scrollRegionRef.current;
+    if (!scrollRegion) {
+      return;
+    }
+
+    installScrollLeftFallback(scrollRegion);
+    syncScrollRegionToEnd(scrollRegion);
+  }, [grid]);
+
   return (
     <Card className="w-full rounded-2xl bg-white dark:bg-zinc-950">
-      <CardHeader className="flex flex-row items-start justify-between space-y-0 px-6 pb-4 pt-5">
-        <CardTitle className="text-[22px] font-medium tracking-tight text-zinc-950 dark:text-zinc-50">
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 px-6 pb-1 pt-1">
+        <CardTitle className="text-[18px] font-medium tracking-tight text-zinc-950 dark:text-zinc-50">
           {title}
         </CardTitle>
         <p className="text-sm text-zinc-600 dark:text-zinc-300">{summaryText}</p>
@@ -161,30 +238,32 @@ export function ContributionActivityMonitor({
           <p className="mb-4 text-sm text-destructive">{error}</p>
         ) : null}
 
-        <div className="rounded-2xl border-zinc-300 dark:border-zinc-700">
-          <div className="overflow-x-auto px-7 py-7">
-            <div className="min-w-[1160px]">
-              <div className="grid grid-cols-[64px_1fr] gap-x-4">
-                <div />
-                <div className="grid grid-cols-13 gap-x-[14px] pb-3 text-[18px] font-medium text-zinc-900 dark:text-zinc-100">
-                  {MONTHS.map((month, index) => (
+        <div className="overflow-hidden rounded-2xl border-zinc-300 dark:border-zinc-700">
+          <div className="grid grid-cols-[64px_1fr] py-7 pr-7">
+            <div
+              aria-hidden="true"
+              className="pb-3 text-[14px] font-medium leading-5 text-transparent select-none"
+            >
+              Apr
+            </div>
+
+            <div ref={scrollRegionRef} className="row-span-2 overflow-x-auto">
+              <div className="min-w-[1160px]">
+                <div className="grid grid-cols-13 gap-x-[14px] pb-3 text-[14px] font-medium text-zinc-900 dark:text-zinc-100">
+                  {monthHeaders.map((month, index) => (
                     <div key={`${month}-${index}`}>{month}</div>
                   ))}
                 </div>
 
-                <div className="grid grid-rows-7 gap-[4px] pt-[1px] text-[17px] text-zinc-900 dark:text-zinc-100">
-                  {DAY_LABELS.map((label, rowIndex) => (
-                    <div key={rowIndex} className="flex h-[20px] items-center">
-                      {label}
-                    </div>
-                  ))}
-                </div>
-
                 <div className="flex gap-[4px]">
-                  {Array.from({ length: 53 }).map((_, weekIndex) => (
+                  {Array.from({ length: GRID_WEEKS }).map((_, weekIndex) => (
                     <div key={weekIndex} className="grid grid-rows-7 gap-[4px]">
-                      {Array.from({ length: 7 }).map((__, dayIndex) => {
+                      {Array.from({ length: GRID_ROWS }).map((__, dayIndex) => {
                         const cell = grid[dayIndex][weekIndex];
+                        if (!cell) {
+                          return <div key={`${weekIndex}-${dayIndex}`} aria-hidden="true" className="h-[20px] w-[20px]" />;
+                        }
+
                         return (
                           <HoverCard key={`${weekIndex}-${dayIndex}`} openDelay={80} closeDelay={40}>
                             <HoverCardTrigger asChild>
@@ -200,7 +279,7 @@ export function ContributionActivityMonitor({
                               side="top"
                               align="center"
                               sideOffset={10}
-                              className="w-fit rounded-xl border-zinc-700 bg-zinc-800 px-4 py-3 text-base font-semibold text-white shadow-lg"
+                              className="w-fit rounded-xl border-zinc-700 bg-zinc-800 px-4 py-3 text-[12px] font-semibold text-white shadow-lg"
                             >
                               {formatContributionLabel(cell.count, cell.date)}
                             </HoverCardContent>
@@ -212,14 +291,22 @@ export function ContributionActivityMonitor({
                 </div>
               </div>
             </div>
+
+            <div className="sticky left-0 z-20 grid grid-rows-7 gap-[4px] bg-white pt-[1px] text-[14px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+              {DAY_LABELS.map((label, rowIndex) => (
+                <div key={rowIndex} className="flex h-[20px] items-center">
+                  {label}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="mt-5 flex items-center justify-between px-7 pb-7 pl-[52px]">
-            <button className="text-[17px] text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+            <button className="text-[14px] text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
               Learn how we count contributions
             </button>
 
-            <div className="flex items-center gap-2 text-[17px] text-zinc-600 dark:text-zinc-300">
+            <div className="flex items-center gap-2 text-[14px] text-zinc-600 dark:text-zinc-300">
               <span>Less</span>
               <div className="flex items-center gap-[6px]">
                 {INTENSITY_CLASSES.map((tone, i) => (
