@@ -154,9 +154,32 @@ function createGrid(dailyCounts: Map<string, number>, end: Date): GridCell[][] {
 }
 
 function createMonthHeaders(end: Date) {
-  return Array.from({ length: MONTH_HEADER_COUNT }, (_, index) => {
-    const month = new Date(end.getFullYear(), end.getMonth() - (MONTH_HEADER_COUNT - 1 - index), 1);
-    return month.toLocaleString("en-US", { month: "short" });
+  const currentWeekStart = createWeekStart(end);
+  const latestMonthColumnByLabel = new Map<string, number>();
+
+  for (let col = 0; col < GRID_WEEKS; col += 1) {
+    for (let row = 0; row < GRID_ROWS; row += 1) {
+      const date = new Date(currentWeekStart);
+      const weeksFromCurrent = GRID_WEEKS - 1 - col;
+      date.setDate(currentWeekStart.getDate() - weeksFromCurrent * 7 + row);
+
+      if (date > end || date.getDate() !== 1) {
+        continue;
+      }
+
+      latestMonthColumnByLabel.set(
+        date.toLocaleString("en-US", { month: "short" }),
+        col
+      );
+    }
+  }
+
+  return Array.from({ length: GRID_WEEKS }, (_, col) => {
+    const matchingMonth = Array.from(latestMonthColumnByLabel.entries()).find(
+      ([, monthCol]) => monthCol === col
+    );
+
+    return matchingMonth?.[0] ?? "";
   });
 }
 
@@ -249,7 +272,10 @@ export function ContributionActivityMonitor({
 
             <div ref={scrollRegionRef} className="row-span-2 overflow-x-auto">
               <div className="min-w-[1160px]">
-                <div className="grid grid-cols-13 gap-x-[14px] pb-3 text-[14px] font-medium text-zinc-900 dark:text-zinc-100">
+                <div
+                  className="grid grid-cols-13 gap-[4px] pb-3 text-[14px] font-medium text-zinc-900 dark:text-zinc-100"
+                  style={{ gridTemplateColumns: `repeat(${GRID_WEEKS}, minmax(20px, 20px))` }}
+                >
                   {monthHeaders.map((month, index) => (
                     <div key={`${month}-${index}`}>{month}</div>
                   ))}
